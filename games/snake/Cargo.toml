@@ -1,0 +1,22 @@
+[package]
+name = "snake"
+version = "0.1.0"
+edition = "2024"
+
+# Dependencies come from [workspace.dependencies] in ../Cargo.toml. Declaring
+# versions here instead would let members drift apart and silently break shared
+# artifact reuse — see the caveat in the workspace root.
+[dependencies]
+bevy = { workspace = true }
+rand = { workspace = true }
+chacha20 = { workspace = true }
+
+[features]
+# Fast iteration: `cargo run --features dev`.
+# Links Bevy as a shared library so rebuilds of *our* code skip relinking the
+# whole engine. Deliberately opt-in — release builds stay statically linked,
+# because a dynamically linked binary needs bevy_dylib shipped alongside it.
+dev = ["bevy/dynamic_linking"]
+
+# NOTE: no [profile.*] here — cargo ignores profiles in workspace members.
+# They live in ../Cargo.toml.

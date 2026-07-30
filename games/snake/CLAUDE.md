@@ -30,7 +30,7 @@ A missing `C:\Users\giorg\.cargo` is expected. Do not "fix" it by reinstalling.
 Dependencies build at `opt-level = 3`, so a *full* rebuild compiles 532 crates
 optimized. On this 6-core / 32 GB laptop the first one took 21m42s and froze the
 machine outright until parallelism was capped to `jobs = 4` in
-`.cargo/config.toml`. Treat a full rebuild as a deliberate, announced action.
+`..\.cargo\config.toml`. Treat a full rebuild as a deliberate, announced action.
 
 What forces one: changing the Bevy version, changing Bevy's feature set
 (including adding `bevy/debug`), or editing any `[profile.*]` section. Editing
@@ -39,21 +39,51 @@ with `dynamic_linking` the engine isn't even relinked.
 
 `jobs` is not part of the artifact fingerprint, so tuning it is always free.
 
+## This is a workspace member, not a standalone project
+
+`games\` is a cargo workspace. Consequences for editing this package:
+
+- **Dependencies** come from `[workspace.dependencies]` in `..\Cargo.toml`; this
+  manifest just says `bevy = { workspace = true }`. Add new deps *there*.
+- **Profiles** live in `..\Cargo.toml` too — cargo ignores `[profile.*]` in
+  members, so there is deliberately none here.
+- **`jobs` and `target-dir`** live in `..\.cargo\config.toml`.
+- **One `Cargo.lock`**, at `..\Cargo.lock`. There is none in this directory.
+- The build cache is `..\target-shared\`, not `.\target\`.
+
+Why a workspace: independent projects sharing only a target directory gave just
+*partial* reuse. Measured 2026-07-30 — a second project reused the ~489 leaf
+third-party crates but still rebuilt 31 `bevy_*` crates including `bevy_ecs`,
+`bevy_render` and `bevy_ui`, the expensive ones. Versions were identical; the
+culprit was feature resolution diverging on `glam`, which all of Bevy sits on.
+
+**Adding a new game:** create it under `games\`, add it to `members`, and take
+its dependencies from `[workspace.dependencies]`. Keeping members' dependency
+lists uniform is what preserves fast builds — cargo resolves features over the
+set of packages being built, so a member with different direct dependencies can
+re-trigger that cascade. Divergent artifacts are cached side by side, so the cost
+is disk and one rebuild, never correctness.
+
+Also: two members cannot build concurrently (cargo locks the target dir), and
+`cargo clean` wipes the cache for every member at once.
+
 ## Verify API against the local Bevy source, not from memory
 
 **This is the most important rule here.** Bevy's API churns hard between
 releases, and 0.19 is recent enough that a model's recalled API is often a
-version or two stale. A full Bevy 0.19 checkout sits at `..\bevy\`:
+version or two stale. A full Bevy 0.19 checkout sits at `..\..\bevy\`:
 
-- `..\bevy\examples\` — the official example catalogue, at exactly our version
-- `..\bevy\crates\` — engine source, for when examples don't cover it
+- `..\..\bevy\examples\` — the official example catalogue, at exactly our version
+- `..\..\bevy\crates\` — engine source, for when examples don't cover it
 
 Before writing an unfamiliar API, grep the examples for it. Every non-obvious
 call in `src/main.rs` was confirmed this way. Note 0.19 moved the game examples
 from `examples/games/` to `examples/showcase/`.
 
 Prefer `cargo check` over `cargo run` when validating that code compiles — same
-errors, much less work than codegen.
+errors, much less work than codegen. But note it is **not** validation: Bevy
+checks query conflicts at runtime, so a clean check can still panic instantly
+(see the `Without<Food>` comment in `snake_tick`). Always launch the app.
 
 ## 0.19 specifics that differ from older tutorials
 
@@ -85,6 +115,12 @@ Most Bevy material online targets 0.13–0.16 and will mislead you:
   backdrop, score readout) are spawned in `Startup` instead.
 - Prefer bailing out over `panic!`/`unwrap` on ECS desync — see the
   `old.len() != snake.body.len()` guard in `snake_tick`.
+
+## Editing these files
+
+Use proper text-editing tools, not PowerShell `Get-Content -Raw` +
+`Set-Content`. In Windows PowerShell 5.1 that round-trip misreads UTF-8 as ANSI
+and mangles every non-ASCII character (em-dashes become `â€”`).
 
 ## Tuning
 

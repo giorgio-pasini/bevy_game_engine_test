@@ -1,0 +1,46 @@
+# Shared cargo configuration for the `games/` workspace.
+#
+# Cargo discovers config by walking UP from the directory you invoke it in and
+# merging what it finds, so every member inherits all of it automatically.
+#
+# Deliberately placed at `games/` rather than `BevyTest/`: the Bevy reference
+# clone at `BevyTest/bevy/` has no config of its own and defines no
+# `[profile.dev]`, so a config one level higher would have overridden its
+# profile and redirected its target dir, invalidating ~17.5 GB of already-built
+# artifacts. Keep this file out of the clone's ancestry.
+#
+# Profiles are NOT here — they live in ../Cargo.toml, the workspace root, which
+# is the only place cargo honours them for members. One source of truth.
+
+[build]
+# One build cache for the whole workspace.
+#
+# A workspace shares `target/` at its root natively, so this line is not
+# strictly required. It is kept because the cache already lives at this path
+# with ~10 GB of built artifacts, and pointing cargo at it avoids moving them.
+#
+# Reuse is real but conditional. Artifacts are keyed by version + features +
+# profile + rustc. The workspace's single Cargo.lock guarantees matching
+# versions; features are the part that can still diverge, because cargo resolves
+# them over the set of packages actually being built. Divergent configurations
+# are cached side by side rather than clobbering each other, so a mismatch costs
+# disk and one rebuild, never correctness.
+#
+# Trade-offs to remember:
+#   * cargo takes an exclusive lock, so two members cannot build concurrently.
+#   * `cargo clean` is all-or-nothing across every member.
+#   * nothing evicts old artifacts automatically; check the size occasionally.
+target-dir = "D:/giorg/Aziende/GreenAlchemist/GreenNewGroup/GreenNewGames/BevyTest/games/target-shared"
+
+# Cap compiler parallelism. This machine is a 6-core / 12-thread i7-8750H with
+# 32 GB RAM. Cargo defaults to one rustc per logical CPU (12), and since
+# dependencies build at opt-level = 3, heavy crates (bevy_render, bevy_pbr,
+# wgpu, naga) can each hold multiple GB during LLVM optimization. Twelve at once
+# exhausted RAM and froze the machine outright on the first full build.
+#
+# Inheriting this matters most for a brand-new member, whose first build is
+# exactly when that risk returns.
+#
+# `jobs` is not part of the artifact fingerprint, so changing it never forces a
+# rebuild. Raise it on a machine with more RAM per core.
+jobs = 4

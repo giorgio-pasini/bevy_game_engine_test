@@ -1,0 +1,55 @@
+# Workspace root for all Bevy experiments.
+#
+# Why a workspace rather than independent projects sharing a target directory:
+# a shared target dir alone gave only PARTIAL reuse. Measured on 2026-07-30, a
+# second independent project reused the ~489 leaf third-party crates (wgpu,
+# naga, winit, image, icu_*) but still rebuilt 31 bevy_* crates — bevy_ecs,
+# bevy_reflect, bevy_render, bevy_ui, bevy_gltf — i.e. all the expensive ones.
+#
+# The cause was NOT differing versions (both lockfiles resolved identically).
+# It was feature resolution: one project depended on `rand`/`chacha20` directly,
+# which changed the enabled features on `glam`, and since essentially all of
+# Bevy sits on top of glam, that difference cascaded through the whole engine.
+#
+# A workspace fixes the version half of that outright — one Cargo.lock, so every
+# member resolves to identical versions. See the caveat below for the rest.
+
+[workspace]
+resolver = "3"
+members = ["snake"]
+
+# Declare shared dependencies here and have every member use
+# `bevy = { workspace = true }`. This is not cosmetic — it is what keeps artifact
+# reuse working.
+#
+# CAVEAT worth understanding: cargo resolves features over the set of packages
+# it is actually building. Building one member alone can enable a different
+# feature set on a shared crate than building another member alone, which
+# reintroduces the cascade above. Two ways to stay fast:
+#   1. Keep members' dependency lists uniform (take them all from here), or
+#   2. Build from this root so features unify across all members at once.
+# Divergent artifacts are cached side by side, so this costs time once per
+# configuration, never correctness.
+[workspace.dependencies]
+bevy = "0.19"
+# Versions matched to what Bevy 0.19's own examples use, so they resolve from
+# the existing registry cache. `rand` 0.10 renamed the `Rng` trait to `RngExt`.
+rand = "0.10"
+chacha20 = { version = "0.10", default-features = false, features = ["rng"] }
+
+# Profiles belong to the workspace root — cargo ignores `[profile.*]` in member
+# manifests, which structurally prevents the drift that would silently break
+# artifact sharing. Values must stay identical to what the cache was built with
+# or everything recompiles.
+#
+# Bevy's recommended dev setup: lightly optimize our code, heavily optimize
+# dependencies. Brutal first build, pays back on every run afterwards.
+#
+# Possible future saving: `debug = "line-tables-only"` would cut most of the
+# ~2.6 GB of .pdb symbols while keeping usable backtraces — but changing the
+# profile forces a full rebuild. Deliberately not set.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
