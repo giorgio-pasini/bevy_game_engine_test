@@ -1,0 +1,40 @@
+[package]
+name = "vn_core"
+version = "0.1.0"
+edition = "2024"
+
+# Dependencies come from [workspace.dependencies] in ../../Cargo.toml.
+[dependencies]
+bevy = { workspace = true }
+serde = { workspace = true }
+ron = { workspace = true }
+thiserror = { workspace = true }
+
+# Declared to keep every member's dependency list UNIFORM, which is what stops
+# `cargo build --workspace` and `cargo build -p <member>` resolving different
+# feature sets and rebuilding the whole engine when you switch between them.
+#
+# Measured: with snake alone pulling these, the two invocations produced
+# dependency trees differing by 51 lines around `rand_core`, `getrandom`,
+# `arrayref` and `cpufeatures` — and since Bevy's `uuid` also uses `getrandom`,
+# that divergence cascades into the engine crates.
+#
+# Not a hack for its own sake: a VN engine wants randomness soon enough
+# (shuffled choices, random flavour lines).
+rand = { workspace = true }
+chacha20 = { workspace = true }
+
+[features]
+# Kept byte-identical to the other members' `dev` feature on purpose. Cargo
+# resolves features over the set of packages being built, so if members disagree
+# they stop sharing compiled artifacts and each pays a full Bevy rebuild.
+#
+# bevy/dev = debug + bevy_dev_tools + file_watcher:
+#   debug         -> names systems and components in ECS errors. Without it a
+#                    query conflict reports "<Enable the debug feature to see
+#                    the name>", which is what snake's B0001 panic showed.
+#   file_watcher  -> hot-reloads assets, including localisation tables.
+# track_location  -> source locations in ECS errors.
+dev = ["bevy/dynamic_linking", "bevy/dev", "bevy/track_location"]
+
+# NOTE: no [profile.*] — cargo ignores profiles in workspace members.

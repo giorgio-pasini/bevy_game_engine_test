@@ -16,7 +16,11 @@
 
 [workspace]
 resolver = "3"
-members = ["snake"]
+members = [
+  "snake",
+  "graphical_adventure_test/vn_core",
+  "graphical_adventure_test/demo_game",
+]
 
 # Declare shared dependencies here and have every member use
 # `bevy = { workspace = true }`. This is not cosmetic — it is what keeps artifact
@@ -31,11 +35,45 @@ members = ["snake"]
 # Divergent artifacts are cached side by side, so this costs time once per
 # configuration, never correctness.
 [workspace.dependencies]
-bevy = "0.19"
+# Bevy 0.19 groups features into PROFILES; its own default is
+# ["2d", "3d", "ui", "audio"], which is what we use plus the format features.
+#
+# "3d" is kept ON PURPOSE even though the current members are all 2D. A 3D test
+# game is planned, and changing Bevy's feature set forces a full rebuild of the
+# whole engine graph — so carrying 3D now costs build time once, while dropping
+# and re-adding it later would cost two rebuilds. Same batching logic as the
+# format features below.
+#
+# (It was briefly dropped. Worth knowing for the future: "bevy/dev" pulls in
+# bevy_dev_tools, which depends on bevy_pbr, so dropping "3d" never removed
+# bevy_pbr or bevy_light anyway. Only bevy_gltf, bevy_anti_alias and
+# bevy_mikktspace actually went away.)
+#
+# "jpeg" is NOT in any default profile (only "png" and "hdr" are, via
+# common_api), so it must be listed explicitly or .jpg assets fail to load at
+# runtime. "mp3"/"wav" are listed now purely so a future audio format does not
+# cost another rebuild. Still opt-in if ever needed: "dds" and
+# "basis-universal" for GPU-compressed textures, "webp", "flac".
+bevy = { version = "0.19", default-features = false, features = [
+  "2d",
+  "3d",
+  "ui",
+  "audio",
+  "jpeg",
+  "mp3",
+  "wav",
+] }
+
 # Versions matched to what Bevy 0.19's own examples use, so they resolve from
 # the existing registry cache. `rand` 0.10 renamed the `Rng` trait to `RngExt`.
 rand = "0.10"
 chacha20 = { version = "0.10", default-features = false, features = ["rng"] }
+
+# Localisation tables and, later, save files. Versions match Bevy's own
+# examples (see bevy/examples/asset/custom_asset.rs).
+serde = { version = "1", features = ["derive"] }
+ron = "0.12"
+thiserror = "2"
 
 # Profiles belong to the workspace root — cargo ignores `[profile.*]` in member
 # manifests, which structurally prevents the drift that would silently break

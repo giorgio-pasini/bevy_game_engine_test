@@ -1,0 +1,14 @@
+[package]
+name = "demo_game"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy = { workspace = true }
+vn_core = { path = "../vn_core" }
+
+[features]
+# Must stay identical to vn_core's and snake's `dev` feature — see the note in
+# ../vn_core/Cargo.toml. `vn_core/dev` is forwarded so enabling dev here enables
+# it all the way down rather than producing two different Bevy configurations.
+dev = ["bevy/dynamic_linking", "bevy/dev", "bevy/track_location", "vn_core/dev"]

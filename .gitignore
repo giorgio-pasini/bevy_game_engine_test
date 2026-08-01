@@ -1,1 +1,54 @@
-games/target-shared/debug/
+# ---------------------------------------------------------------- builds ----
+# Build caches. Enormous and fully reproducible: ~21 GB for this workspace,
+# against ~12 KB of game source. Never commit these.
+target/
+target-shared/
+**/target/
+
+# Cargo can place processed assets here when asset processing is enabled.
+imported_assets/
+
+# ------------------------------------------------------- the Bevy checkout ---
+# `bevy/` is a shallow clone of the engine kept as a version-matched API
+# reference. It is ~18 GB with its own build cache, and it is its own git
+# repository — committing it would nest a repo inside this one.
+#
+# It is NOT optional to the workflow: the guide requires verifying APIs against
+# it rather than recalling them. Recreate it after cloning this repo with:
+#
+#   git clone --depth 1 --branch v0.19.0 https://github.com/bevyengine/bevy.git
+#
+# Keep the tag matched to the `bevy` version in games/Cargo.toml.
+/bevy/
+
+# ------------------------------------------------------------ player data ---
+# Written at runtime, specific to whoever ran the game.
+saves/
+settings.ron
+profile.ron
+
+# ------------------------------------------------------------------- rust ---
+# Note: Cargo.lock IS committed on purpose. This workspace produces binaries,
+# not a published library, so pinning exact versions is what makes builds
+# reproducible — and since a full rebuild costs ~20 minutes here, an accidental
+# dependency bump is expensive.
+*.pdb
+*.rs.bk
+
+# -------------------------------------------------------------------- ide ---
+.vscode/
+.idea/
+*.iml
+*.swp
+*~
+
+# --------------------------------------------------------------------- os ---
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# ------------------------------------------------------------------- logs ---
+*.log

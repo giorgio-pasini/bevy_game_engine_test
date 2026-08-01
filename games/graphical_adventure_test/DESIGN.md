@@ -1,0 +1,652 @@
+# Visual Novel Template — Design Document
+
+**Status:** design only. No code exists yet, and this crate is deliberately not a
+workspace member.
+**Target:** Bevy 0.19.0.
+**Audience:** whoever implements this next — human or AI.
+
+---
+
+## Part 0 — Purpose, scope and decisions
+
+### What this is
+
+A reusable template for Ren'Py-style graphical adventures: still-image
+backgrounds, character sprites, a dialogue box with narration and speech,
+branching choices, music and sound.
+
+The deliverable is **not one game**. It is a library of Bevy plugins that many
+such games can depend on, plus one small demo game that proves the library works
+and shows how to use it.
+
+### The four decisions, and why
+
+These were settled before writing, and the reasoning matters more than the
+outcome — a later reader who disagrees should be able to see exactly what they
+are overturning.
+
+#### 1. Scene structure in Rust; prose in external localised data
+
+The scene graph — nodes, branches, jumps, conditions — is Rust. Dialogue lines
+hold a **text key**, and the localised prose lives in `.ron` files loaded as
+assets.
+
+The original recommendation here was to put *everything* in data files, on the
+Ren'Py model. That was wrong for this project, and the reasoning is worth
+recording. Ren'Py's data-driven design optimises for **non-programmer writers**.
+This project has no such writers; it has an AI generating content. When content
+is machine-generated, the dominant failure is a plausible-looking reference to
+something that does not exist — a jump to `chapter2_forest` when the node is
+called `chapter_2_forest`. In Rust that is a build error. In a data file it is a
+crash twenty minutes into playtesting.
+
+Prose is split out anyway because **localisation genuinely requires runtime
+string swapping**, and no amount of compile-time safety changes that.
+
+Be precise about what this does and does not buy:
+
+- **Secured:** node identity, jump targets, branch exhaustiveness, character and
+  asset *identifiers*, condition variable names.
+- **Not secured:** that a text key exists in the translation files, and that an
+  asset path points at a real file on disk. Both are runtime lookups.
+
+That residual gap is closed by a validation test (Part 4), not by wishful
+thinking.
+
+#### 2. Pure visual novel, with seams for point-and-click
+
+Only VN mechanics are implemented. But three seams are specified now so that
+adding classic adventure mechanics later is an extension rather than a rewrite.
+See Part 6.
+
+#### 3. Full-featured
+
+Save/load, backlog, auto-advance, skip, settings, localisation, voice hooks, CG
+gallery, achievements. This is a large surface, so Part 7 sequences it into
+milestones that each run on their own.
+
+#### 4. Library of plugins plus a demo game
+
+```
+games/graphical_adventure_test/
+  vn_core/      # library crate: the engine, as Bevy plugins
+  demo_game/    # binary crate: a short story that consumes vn_core
+```
+
+The alternative — one copyable project per game — was rejected because
+improvements would never flow back between games.
+
+---
+
+## Part 1 — Component inventory
+
+What a game of this genre actually needs, grouped by concern. Anything marked
+**Deferred** is deliberately excluded from the first implementation.
+
+### 1.1 Presentation
+
+| Component | Responsibility | Notes |
+| --- | --- | --- |
+| Background layer | One full-screen still image | Single sprite; swapped with a transition |
+| Character layer | Sprites at named stage slots | Slots (`FarLeft…FarRight`), not raw pixel coordinates |
+| Pose / expression | Swap a character's image without re-entering | Distinct handle per pose; not an animation system |
+| Dialogue box | Speaker name, body text, continue indicator | 9-slice frame so it scales cleanly |
+| Typewriter reveal | Progressive character reveal, skippable | Reveal count, not string mutation — see Part 4 |
+| Narration | Prose with no speaker | Same box, different styling. A distinct step type |
+| Choice menu | Buttons for available branches | Unavailable choices hidden or shown disabled |
+| Screen effects | Fade to/from black, flash, shake | Small closed set, not a general animation system |
+| UI chrome | Auto, Skip, Log, Save, Load, Settings | Hideable, so the art can be admired |
+
+### 1.2 Story runtime
+
+| Component | Responsibility |
+| --- | --- |
+| Scene graph | The static, compile-checked story structure |
+| Story cursor | Where we are: current scene + step index |
+| Variables & flags | Player choices remembered across scenes |
+| Conditions | Guards on choices and branches |
+| Text keys | Indirection between a line and its localised prose |
+| Seen-line set | Which lines the player has already read — required for "skip read text" |
+| History / backlog | Recent lines, scrollable and re-readable |
+
+### 1.3 Audio
+
+| Component | Responsibility | Notes |
+| --- | --- | --- |
+| BGM | One looping track, crossfaded on change | Fade pattern already exists in Bevy's examples |
+| SFX | Fire-and-forget one-shots | Despawn on completion |
+| Voice | Optional clip per dialogue line | Cancelled when the line is skipped |
+| Volume buses | Master, BGM, SFX, Voice, independently settable | Settings must persist |
+
+### 1.4 Services
+
+| Component | Responsibility |
+| --- | --- |
+| Asset registry | The single mapping from typed ID to file path |
+| Preloading + loading screen | No hitching mid-scene |
+| Save / load | Slots with metadata and a screenshot thumbnail |
+| Settings | Text speed, volumes, language, window mode; persisted separately from saves |
+| Auto-advance | Advance after a delay proportional to line length |
+| Skip | Fast-forward, optionally limited to already-seen lines |
+| Gallery | Backgrounds and CGs the player has unlocked |
+| Achievements | Named milestones, unlocked by story events |
+| Input abstraction | Intent (`Advance`, `Skip`, `Menu`) rather than raw keys |
+
+---
+
+## Part 2 — Architecture
+
+### 2.1 The load-bearing rule
+
+> **Presentation is a pure function of story state.**
+
+Systems reconcile what is on screen toward what the current story position
+describes. Nothing mutates the screen imperatively as a side effect of
+advancing.
+
+This is the same discipline as `sync_transforms` in the snake game being the
+only system that writes `Transform`. It is stated here because three otherwise
+hard features fall out of it almost free:
+
+- **Save/load** — persist the cursor and variables; rebuild the screen by
+  replaying (Part 3).
+- **Skip** — advance the cursor rapidly; presentation follows without special
+  cases.
+- **Rollback** — rewind the cursor and replay.
+
+Violate this rule and each of those becomes a bespoke, bug-prone subsystem.
+
+### 2.2 Plugin decomposition
+
+`vn_core` exposes one plugin per concern, plus a `VnCorePlugin` that adds them
+all. Games depending on the library can therefore replace one piece without
+forking the whole engine.
+
+| Plugin | Owns |
+| --- | --- |
+| `StoryPlugin` | Cursor, variables, seen-set, scene advancement |
+| `StagePlugin` | Background and character sprite reconciliation |
+| `DialoguePlugin` | Dialogue box, typewriter, narration |
+| `ChoicePlugin` | Choice menu presentation and selection |
+| `AudioPlugin` | BGM crossfade, SFX, voice, volume buses |
+| `LocalePlugin` | Text-key resolution, language switching |
+| `SavePlugin` | Snapshot, slots, persistence |
+| `BacklogPlugin` | History capture and the log screen |
+| `SettingsPlugin` | Settings resource and persistence |
+| `GalleryPlugin` | Unlock tracking, gallery screen |
+| `AchievementPlugin` | Milestone unlocks |
+| `InputPlugin` | Raw input to intent mapping |
+
+### 2.3 Data model
+
+Illustrative sketches. **These have not been compiled** — treat them as intent,
+and verify against Bevy 0.19 while implementing.
+
+Every identifier is an enum, so references are compile-checked:
+
+```rust
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+pub enum SceneId { Prologue, ForestPath, VillageGate }
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+pub enum CharacterId { Mira, Bran }
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+pub enum PoseId { Neutral, Smiling, Angry }
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+pub enum Slot { FarLeft, Left, Centre, Right, FarRight }
+
+/// Key into the localisation tables. NOT verified at compile time —
+/// covered by the validation test in Part 4 instead.
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+pub struct TextKey(pub &'static str);
+```
+
+A scene is a flat list of steps. Branching happens between scenes, not inside
+them — this keeps each scene readable and each `match` small:
+
+```rust
+pub struct Scene {
+    pub id: SceneId,
+    pub steps: Vec<Step>,
+}
+
+pub enum Step {
+    Say { speaker: CharacterId, text: TextKey, voice: Option<VoiceId> },
+    Narrate { text: TextKey },
+    Show { character: CharacterId, pose: PoseId, slot: Slot },
+    Hide { character: CharacterId },
+    Background { image: BackgroundId, transition: Transition },
+    Music { track: Option<TrackId>, fade_secs: f32 },
+    Sound { sfx: SfxId },
+    Set { var: VarId, value: Value },
+    Choices(Vec<Choice>),
+    JumpTo(SceneId),
+    Effect(ScreenEffect),
+    End,
+}
+
+pub struct Choice {
+    pub text: TextKey,
+    pub condition: Option<Condition>,
+    pub target: SceneId,
+}
+```
+
+Scene content is produced by one exhaustive `match`:
+
+```rust
+pub fn scene(id: SceneId) -> Scene {
+    match id {
+        SceneId::Prologue   => prologue(),
+        SceneId::ForestPath => forest_path(),
+        SceneId::VillageGate => village_gate(),
+    }
+}
+```
+
+**This is the single most valuable structural choice in the document.** Adding a
+`SceneId` variant and forgetting to write the scene is a compile error naming
+the missing variant. The compiler becomes the to-do list, which is exactly the
+property that makes AI-generated content safe to accept.
+
+Conditions stay deliberately small. Resist growing an expression language:
+
+```rust
+pub enum Condition {
+    IsSet(VarId),
+    IsNotSet(VarId),
+    AtLeast(VarId, i32),
+    All(Vec<Condition>),
+    Any(Vec<Condition>),
+}
+```
+
+### 2.4 State machine
+
+Verified against `../../bevy/examples/state/sub_states.rs`:
+
+```rust
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, States)]
+pub enum AppState {
+    #[default]
+    Boot,
+    Loading,
+    MainMenu,
+    Playing,
+    Paused,
+    Gallery,
+}
+
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, SubStates)]
+#[source(AppState = AppState::Playing)]
+pub enum PlayMode {
+    #[default]
+    Revealing,     // typewriter still running
+    AwaitingInput, // line complete, waiting for advance
+    AwaitingChoice,
+    Auto,
+    Skipping,
+}
+```
+
+Registered with `.init_state::<AppState>()` and `.add_sub_state::<PlayMode>()`.
+
+Use `DespawnOnExit(SomeState)` for screen-scoped entities, as the snake game
+does — it removes a whole class of teardown bugs.
+
+### 2.5 Events as the seam
+
+The story runtime never touches sprites or text. It emits events; presentation
+plugins consume them. This is what keeps the purity rule enforceable.
+
+```rust
+#[derive(Event)] pub struct SceneEntered(pub SceneId);
+#[derive(Event)] pub struct LineStarted { pub speaker: Option<CharacterId>, pub text: TextKey }
+#[derive(Event)] pub struct LineCompleted;
+#[derive(Event)] pub struct ChoicesOffered(pub Vec<Choice>);
+#[derive(Event)] pub struct StageChanged;
+```
+
+In Bevy 0.19 an observer takes `On<E>` — **not** `Trigger<E>`, which is what
+older tutorials show.
+
+---
+
+## Part 3 — Save/load, argued
+
+### The recommendation
+
+Persist a small, explicit, serde-serializable snapshot:
+
+```rust
+#[derive(Resource, Clone, Serialize, Deserialize)]
+pub struct StoryState {
+    pub scene: SceneId,
+    pub step: usize,
+    pub vars: BTreeMap<VarId, Value>,
+    pub seen: BTreeSet<(SceneId, usize)>,
+}
+```
+
+`BTreeMap`/`BTreeSet` rather than the hash variants, so serialisation order is
+deterministic and save files diff cleanly.
+
+### What is deliberately *not* used
+
+Bevy 0.19 ships `bevy_world_serialization` (`DynamicWorld`, in the default
+`scene` feature), which can serialise entities and components wholesale. It is
+the wrong tool here, and this is the document's flagship example of choosing the
+simpler option on purpose:
+
+- It **couples the save format to ECS layout.** Rename a component or split a
+  bundle and every existing save breaks. For a game players replay over weeks,
+  that is a serious defect.
+- It saves **far more than is meaningful.** Sprite entities, UI nodes and
+  transforms are all derived data.
+- It is **harder to debug.** A VN save should be a few lines of readable RON.
+
+### Restoring — why this works
+
+Loading sets `StoryState` and re-enters the scene in **silent replay**: steps
+`0..step` are applied for their *stage* effects only — `Show`, `Hide`,
+`Background`, `Music` — while `Say`, `Narrate`, `Effect` and `Choices` are
+skipped.
+
+**`Set` must be excluded from replay, and this is easy to get wrong.** Variables
+are restored from the snapshot, so replaying them is at best redundant. It
+becomes an outright bug the moment anyone adds a non-idempotent step such as
+`Increment`: a counter would advance again on every load, and the corruption
+would grow each time the player reloads. The rule is therefore sharper than
+"replay the stage effects":
+
+> Replay reconstructs **derived** state only. Anything present in `StoryState`
+> is restored by deserialisation and must never be recomputed.
+
+A test worth writing at Milestone 8: save, load, save again, and assert the two
+snapshots are byte-identical. That catches every violation of this rule in one
+assertion.
+
+The result is a stage identical to the one the player left, reconstructed from
+first principles rather than stored. **This is only sound because of the purity
+rule in Part 2.1** — it is the concrete payoff for that discipline, and the
+reason to hold the line on it.
+
+Store separately, because their lifetimes differ:
+
+| File | Contents | Lifetime |
+| --- | --- | --- |
+| `save_<n>.ron` | `StoryState` + metadata + thumbnail path | Per slot |
+| `settings.ron` | Volumes, text speed, language, window mode | Global |
+| `profile.ron` | Seen lines, gallery unlocks, achievements | Global, survives all saves |
+
+Seen-lines and unlocks belong in the profile, not in a save — a player who
+reloads an earlier slot should not lose their gallery.
+
+---
+
+## Part 4 — Patterns, anti-patterns, and the over-engineering line
+
+### Practices to adopt
+
+**One writer per piece of data.** Exactly one system writes the dialogue text,
+one writes character sprites, one writes the background. Everything else emits
+events. This is the rule that made snake's movement code easy to reason about,
+and it is what Bevy's scheduler rewards.
+
+**Typewriter by reveal count, not string mutation.** Store
+`revealed: usize` and render a slice of the resolved string. Mutating a `String`
+every frame reallocates constantly, and — more importantly — destroys the
+source text, so "skip to full line" and the backlog both become special cases.
+
+**One asset registry.** Exactly one function maps each typed ID to a path:
+
+```rust
+pub fn background_path(id: BackgroundId) -> &'static str {
+    match id {
+        BackgroundId::Forest => "backgrounds/forest.png",
+        BackgroundId::Village => "backgrounds/village.png",
+    }
+}
+```
+
+Asset paths are the one thing the compiler cannot check. Centralising them means
+a **single** validation test covers the entire game:
+
+```rust
+#[test]
+fn every_referenced_asset_exists() { /* walk all IDs, assert the file exists */ }
+```
+
+Add a companion test asserting every `TextKey` used by any scene resolves in
+every shipped language. Together these close the exact gap identified in Part 0
+— cheap, and they run in `cargo test` rather than at the player's expense.
+
+**Intent-based input.** Systems react to `Advance`, never to
+`MouseButton::Left`. Gamepad and keyboard support then cost nothing.
+
+**Text speed as a rate, not a frame count.** Characters per second, driven by
+`Time`. Frame-count reveals run at different speeds on different machines.
+
+**`DespawnOnExit` for screen-scoped entities.** Verified working in the snake
+game.
+
+### Practices to avoid
+
+**Do not build on `bevy_ui_widgets` yet.** Bevy 0.19's own example warns the
+patterns "are likely to change substantially as the `bevy_ui_widgets` crate
+matures, so please exercise caution if you are using this as a reference for
+your own code, and note that there are still 'user experience' issues with this
+API." Use plain `Node` + `Button` + observers, as in
+`../../bevy/examples/ui/widgets/button.rs`. Revisit when it stabilises.
+
+**Do not treat a passing `cargo check` as validation.** Bevy resolves query
+conflicts at *runtime*. In this project, snake type-checked with zero warnings
+and then panicked immediately with `error[B0001]` because two queries
+overlapped. Every milestone must actually launch.
+
+**Do not store presentation state in the save.** Sprite positions, tween
+progress and text reveal counts are derived. Saving them guarantees they will
+one day contradict the story state.
+
+**Do not put dialogue text in the scene graph.** It defeats localisation and
+bloats compile times. Text keys only.
+
+**Do not write a general animation system.** A VN needs fades, a flash and a
+shake. A closed `ScreenEffect` enum covers it.
+
+**Do not let scene functions grow past a screenful.** Split into more `SceneId`
+variants. The compiler enforces completeness, so more scenes cost nothing.
+
+**Do not add a scripting DSL.** It is the classic trap for this genre: a parser,
+an error reporter and an editor integration is a larger project than the game.
+
+### The over-engineering line
+
+| Do now | Do **not** do yet | Why |
+| --- | --- | --- |
+| Enum IDs for every asset and scene | A generic `AssetId<T>` abstraction | Enums already give compile-checking |
+| Flat `Vec<Step>` per scene | A general graph with arbitrary edges | Branching between scenes covers real stories |
+| Five-variant `Condition` | An expression parser with arithmetic | Flags and counters cover essentially every VN |
+| One `ScreenEffect` enum | A tweening/easing framework | Three effects do not need a framework |
+| Direct plugin wiring | A plugin dependency-resolution system | A dozen plugins register fine by hand |
+| `BTreeMap<VarId, Value>` | A typed variable schema with migrations | Save migration is a real problem — but only once players exist |
+| Hand-rolled localisation lookup | A full ICU/Fluent pipeline | Plural rules and gendered grammar can wait for a real translator |
+
+The governing question: **does this abstraction remove a class of bug that has
+actually occurred, or is it insurance against an imagined future?** Only the
+first justifies the complexity.
+
+### Bevy 0.19 cautions carried from this project
+
+- Changing Bevy's **feature set** forces a full rebuild of the whole engine
+  graph. Adding `serde`/`ron` to the workspace will trigger this once.
+- APIs moved in 0.19: `FontSize::Px(..)` not a bare float,
+  `WindowResolution::new()` takes integers, observers take `On<E>`,
+  `timer.is_finished()` not `.finished()`.
+- **Verify every unfamiliar API against `../../bevy/examples/`** rather than
+  recalling it. 0.19 postdates most training data and most online tutorials
+  target 0.13–0.16.
+
+---
+
+## Part 5 — Component → example map
+
+Every path verified to exist, relative to `../../bevy/examples/`.
+
+| Need | Example |
+| --- | --- |
+| Custom RON asset + loader (localisation tables) | `asset/custom_asset.rs` |
+| Preloading and load tracking | `asset/asset_loading.rs`, `asset/multi_asset_sync.rs` |
+| Loading screen | `showcase/loading_screen.rs` |
+| Hot-reloading assets while running | `asset/hot_asset_reloading.rs` |
+| BGM with crossfade | `audio/soundtrack.rs` |
+| One-shot SFX | `audio/play_sound_effect.rs` |
+| Volume control, pause/resume | `audio/audio_control.rs` |
+| App states | `state/states.rs` |
+| Sub-states (play modes) | `state/sub_states.rs` |
+| Derived states | `state/computed_states.rs` |
+| Custom state transitions (fades) | `state/custom_transitions.rs` |
+| Menus, buttons, state-scoped UI | `showcase/game_menu.rs` |
+| Text rendering and styling | `ui/text/text.rs` |
+| Buttons and interaction | `ui/widgets/button.rs` |
+| 9-slice dialogue frames | `ui/images/ui_texture_slice.rs` |
+| Scrollable backlog | `ui/scroll_and_overflow/scroll.rs` |
+| UI transforms (slide/scale effects) | `ui/ui_transform.rs` |
+| Render UI to texture (save thumbnails) | `ui/render_ui_to_texture.rs` |
+| Sprites and layering | `2d/sprite.rs` |
+| Sprite sheets (poses/expressions) | `2d/texture_atlas.rs`, `2d/sprite_animation.rs` |
+| Timers (typewriter, auto-advance) | `time/timers.rs` |
+| Pausing time | `time/virtual_time.rs` |
+| Input handling | `input/keyboard_input.rs`, `input/mouse_input.rs`, `input/gamepad_input.rs` |
+| World serialisation (**reference only — not used**) | `scene/world_serialization.rs` |
+| Window configuration | `window/window_settings.rs` |
+| State-scoped despawn, states in practice | `showcase/alien_cake_addict.rs` |
+
+---
+
+## Part 6 — Extension seams for point-and-click
+
+Not implemented, but designed for. Adding classic adventure mechanics later
+should touch these three places and nothing else.
+
+**Seam 1 — a new `Step` variant.** `Step::Explore { scene: ExploreSceneId }`
+hands control to an exploration mode and returns when the player leaves. The
+story runtime needs no other change.
+
+**Seam 2 — a new `AppState` variant.** `AppState::Exploring`, parallel to
+`Playing`, with its own sub-states for verb selection and inventory. The
+existing states are untouched.
+
+**Seam 3 — conditions already cover puzzle state.** `Condition::IsSet` and
+`AtLeast` over `VarId` express "has the key", "has talked to the guard twice".
+Inventory becomes a `VarId` convention rather than a new system.
+
+The one thing to get right *now*: keep `Step` an enum and `Condition` a closed
+set. Both extend by adding variants, which the compiler then demands be handled
+everywhere. Had these been trait objects or strings, extending them later would
+be silent and error-prone.
+
+---
+
+## Part 7 — Implementation roadmap
+
+Each milestone ends in something runnable. Never integrate big-bang.
+
+| # | Milestone | Done when |
+| --- | --- | --- |
+| 1 | Workspace setup: `vn_core` + `demo_game`, added to `games/Cargo.toml` members | `cargo run -p demo_game --features dev` opens a window |
+| 2 | Data model + `scene()` match + one hard-coded scene | A unit test walks the scene without panicking |
+| 3 | Stage: background and character sprites reconciled from story state | A static scene renders correctly |
+| 4 | Dialogue box + typewriter + advance on input | A linear scene is readable start to finish |
+| 5 | Localisation: text keys resolved from RON | Switching language changes all on-screen text |
+| 6 | Choices and branching | The demo has two reachable endings |
+| 7 | Audio: BGM crossfade, SFX, volume buses | Music changes across scenes without a pop |
+| 8 | Save/load with silent replay | Save mid-scene, restart the process, reload, stage identical; save→load→save round-trips byte-identically |
+| 9 | Backlog, auto-advance, skip | Skip respects the seen-set |
+| 10 | Settings screen with persistence | Settings survive a restart |
+| 11 | Transitions and screen effects | Scene changes fade rather than cut |
+| 12 | Gallery, achievements, voice hooks | Unlocks persist in the profile, not the save |
+| 13 | Validation tests: asset paths, text keys | `cargo test` catches a deliberately broken reference |
+
+Milestone 8 is the real test of the architecture. If silent replay is awkward,
+the purity rule has been violated somewhere earlier — fix that rather than
+patching around it.
+
+---
+
+## Part 8 — Building and running
+
+Learned the hard way; both of these cost time during the first prototype.
+
+### Pick one cargo invocation and never mix them
+
+```powershell
+# from games/
+cargo build --workspace --features dev
+```
+
+Cargo resolves features over **the set of packages it is actually building**.
+`cargo build --workspace` and `cargo run -p demo_game` therefore produce
+*different* feature sets for shared crates — `snake` pulls `rand`, which changes
+features on `glam`, which sits under all of Bevy. Switching between the two
+commands silently triggers a full engine rebuild each way.
+
+Measured: after a clean `--workspace` build, a `cargo run -p demo_game` started
+recompiling `bevy_reflect`, `bevy_ecs`, `bevy_math` from scratch.
+
+### Running the binary directly
+
+Because `dev` enables `dynamic_linking`, the executable imports
+`bevy_dylib-<hash>.dll` and `std-<hash>.dll`. `cargo run` puts those on `PATH`;
+running the `.exe` yourself does not, and Windows fails with `0xC0000135`
+(`STATUS_DLL_NOT_FOUND`) and no message.
+
+```powershell
+$root = "<repo>\games"
+$env:PATH = "$root\target-shared\debug\deps;$root\target-shared\debug;" +
+            "D:\RustDev\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin;$env:PATH"
+$env:BEVY_ASSET_ROOT = "$root\graphical_adventure_test\demo_game"
+& "$root\target-shared\debug\demo_game.exe"
+```
+
+Note `bevy_dylib-<hash>.dll` lives in `deps\`, not next to the exe — the
+unhashed `bevy_dylib.dll` beside the binary is *not* the one it imports.
+
+`BEVY_ASSET_ROOT` must point at the directory **containing** `assets\`, because
+the asset root is otherwise resolved relative to the executable.
+
+### Feature changes cost a full rebuild — batch them
+
+Any change to Bevy's feature set rebuilds the whole engine graph. Before
+changing one, check whether anything else is pending and do them together. The
+prototype's build combined dropping `3d`, adding `jpeg`, `mp3`, `wav`,
+`bevy/dev`, `track_location`, and the `serde`/`ron` dependencies into one pass.
+
+Dropping the `3d` profile took that build from **532 crates to 75**, and the
+saving repeats on every future rebuild.
+
+## Part 9 — Open risks
+
+**Localisation has no obvious first-party answer.** Bevy ships nothing for it.
+The plan is a hand-rolled `BTreeMap<TextKey, String>` per language, loaded from
+RON. This is adequate for interpolation-free prose and inadequate for plural
+rules and gendered grammar. Revisit only when a real translator is involved.
+
+**Third-party crates lag.** Bevy 0.19 is recent; ecosystem crates for tweening,
+localisation or dialogue may not support it. Verify support before adopting any
+dependency — do not assume from a crate's README.
+
+**Adding this crate forces one full rebuild.** `serde` and `ron` change the
+workspace's unified feature set. Expect roughly 20 minutes once, at `jobs = 4`.
+Schedule it deliberately rather than being surprised by it.
+
+**Save migration is unsolved and intentionally so.** Once real players exist,
+`StoryState` will need a version field and a migration path. Adding it now would
+be over-engineering; adding it after release would be too late. The trigger to
+implement it is the first external playtester.
+
+**Text-key and asset-path validation depend on tests being written.** Milestone
+13 is not optional garnish — it is what makes the Part 0 safety argument true
+rather than aspirational.

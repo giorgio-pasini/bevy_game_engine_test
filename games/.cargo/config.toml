@@ -44,3 +44,21 @@ target-dir = "D:/giorg/Aziende/GreenAlchemist/GreenNewGroup/GreenNewGames/BevyTe
 # `jobs` is not part of the artifact fingerprint, so changing it never forces a
 # rebuild. Raise it on a machine with more RAM per core.
 jobs = 4
+
+# Shortcuts that bake in the right flags, so `--features dev` is never forgotten
+# and the invocation stays consistent.
+#
+# These are convenience, not the fix: the real guard against mismatched feature
+# resolution is keeping every member's dependency list uniform (see the note in
+# graphical_adventure_test/vn_core/Cargo.toml). Aliases just make the correct
+# command the easy one to type.
+#
+#   cargo vn      -> run the visual novel
+#   cargo snake   -> run the snake game
+#   cargo wb      -> build everything
+#   cargo wt      -> test everything
+[alias]
+vn = "run -p demo_game --features dev"
+snake = "run -p snake --features dev"
+wb = "build --workspace --features dev"
+wt = "test --workspace --features dev"

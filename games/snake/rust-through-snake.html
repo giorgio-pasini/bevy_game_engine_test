@@ -1,0 +1,1657 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark"><title>Rust, taught through Snake</title>
+
+<style>
+/* ============================================================ tokens ==== */
+:root {
+  --bg:        #F8FAFC;
+  --panel:     #FFFFFF;
+  --panel-2:   #EEF2F7;
+  --fg:        #263040;
+  --fg-dim:    #5C6879;
+  --rule:      #D8E0EA;
+
+  --note:      #1C6FA8;
+  --error:     #C0343A;
+  --help:      #2F7D4E;
+  --warn:      #96700F;
+
+  --c-kw:  #7A3FBF;
+  --c-ty:  #16697F;
+  --c-mac: #A63A72;
+  --c-str: #2F7D4E;
+  --c-num: #A85A18;
+  --c-com: #78849A;
+
+  --font-display: Constantia, "Palatino Linotype", Palatino, Georgia, serif;
+  --font-ui: Candara, Optima, "Segoe UI", system-ui, sans-serif;
+  --font-code: "Cascadia Code", "Cascadia Mono", "JetBrains Mono", Consolas, ui-monospace, monospace;
+
+  --step--1: clamp(0.78rem, 0.74rem + 0.18vw, 0.88rem);
+  --step-0:  clamp(0.95rem, 0.90rem + 0.24vw, 1.08rem);
+  --step-1:  clamp(1.15rem, 1.05rem + 0.45vw, 1.4rem);
+  --step-2:  clamp(1.5rem, 1.3rem + 0.9vw, 2.1rem);
+  --step-3:  clamp(2rem, 1.6rem + 1.8vw, 3.2rem);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:      #12151A;
+    --panel:   #171B22;
+    --panel-2: #1D222B;
+    --fg:      #C9D0DA;
+    --fg-dim:  #838E9E;
+    --rule:    #29303B;
+
+    --note:    #4FA9E4;
+    --error:   #EC6A6E;
+    --help:    #5FBE84;
+    --warn:    #DCAE4E;
+
+    --c-kw:  #A794F5;
+    --c-ty:  #63BDCB;
+    --c-mac: #DE8CB4;
+    --c-str: #85C295;
+    --c-num: #DFA070;
+    --c-com: #626D7D;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg:      #12151A;
+  --panel:   #171B22;
+  --panel-2: #1D222B;
+  --fg:      #C9D0DA;
+  --fg-dim:  #838E9E;
+  --rule:    #29303B;
+  --note:    #4FA9E4;
+  --error:   #EC6A6E;
+  --help:    #5FBE84;
+  --warn:    #DCAE4E;
+  --c-kw:  #A794F5;
+  --c-ty:  #63BDCB;
+  --c-mac: #DE8CB4;
+  --c-str: #85C295;
+  --c-num: #DFA070;
+  --c-com: #626D7D;
+}
+
+:root[data-theme="light"] {
+  --bg:      #F8FAFC;
+  --panel:   #FFFFFF;
+  --panel-2: #EEF2F7;
+  --fg:      #263040;
+  --fg-dim:  #5C6879;
+  --rule:    #D8E0EA;
+  --note:    #1C6FA8;
+  --error:   #C0343A;
+  --help:    #2F7D4E;
+  --warn:    #96700F;
+  --c-kw:  #7A3FBF;
+  --c-ty:  #16697F;
+  --c-mac: #A63A72;
+  --c-str: #2F7D4E;
+  --c-num: #A85A18;
+  --c-com: #78849A;
+}
+
+/* ============================================================ base ====== */
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: var(--step-0);
+  line-height: 1.55;
+  overflow-x: hidden;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  text-wrap: balance;
+  margin: 0;
+  line-height: 1.15;
+}
+
+p { margin: 0; }
+code, pre, kbd { font-family: var(--font-code); }
+
+/* ============================================================ deck ===== */
+.deck {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2.2rem 1.1rem 6.5rem;
+}
+
+.slide {
+  display: none;
+  width: min(1080px, 100%);
+  min-height: min(74vh, 640px);
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: clamp(1.4rem, 3.5vw, 2.8rem);
+  flex-direction: column;
+  gap: 1.15rem;
+}
+
+.slide.is-active { display: flex; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .slide.is-active { animation: fade 260ms ease-out; }
+  @keyframes fade { from { opacity: 0; transform: translateY(5px); } }
+}
+
+/* ------------------------------------------------------ slide header --- */
+.eyebrow {
+  font-size: var(--step--1);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+  font-family: var(--font-code);
+}
+
+.slide h2 { font-size: var(--step-2); }
+.slide h3 { font-size: var(--step-1); margin-top: 0.2rem; }
+
+.lede { color: var(--fg-dim); max-width: 68ch; }
+
+/* ------------------------------------------------------ code panels ---- */
+.code {
+  margin: 0;
+  background: var(--panel-2);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--fg-dim);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.code > figcaption {
+  font-family: var(--font-code);
+  font-size: var(--step--1);
+  color: var(--fg-dim);
+  padding: 0.4rem 0.85rem;
+  border-bottom: 1px solid var(--rule);
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.code pre {
+  margin: 0;
+  padding: 0.85rem;
+  overflow-x: auto;
+  font-size: var(--step--1);
+  line-height: 1.62;
+  tab-size: 4;
+}
+
+.code.is-error { border-left-color: var(--error); }
+.code.is-help  { border-left-color: var(--help); }
+.code.is-note  { border-left-color: var(--note); }
+.code.is-warn  { border-left-color: var(--warn); }
+
+.code.is-error > figcaption { color: var(--error); }
+.code.is-help  > figcaption { color: var(--help); }
+.code.is-warn  > figcaption { color: var(--warn); }
+
+/* syntax */
+.t-kw  { color: var(--c-kw); }
+.t-ty  { color: var(--c-ty); }
+.t-mac { color: var(--c-mac); }
+.t-str { color: var(--c-str); }
+.t-num { color: var(--c-num); }
+.t-com { color: var(--c-com); font-style: italic; }
+.t-attr{ color: var(--c-mac); }
+
+/* ------------------------------------------------- diagnostic block --- */
+.diag {
+  font-family: var(--font-code);
+  font-size: var(--step--1);
+  border-left: 2px solid var(--note);
+  padding: 0.15rem 0 0.15rem 0.95rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.42rem;
+}
+
+.d-loc { color: var(--note); }
+.d-tag { font-weight: 700; }
+.tag-note { color: var(--note); }
+.tag-help { color: var(--help); }
+.tag-warn { color: var(--warn); }
+.tag-err  { color: var(--error); }
+.diag p { color: var(--fg); }
+
+.carets {
+  font-family: var(--font-code);
+  font-size: var(--step--1);
+  color: var(--error);
+  white-space: pre;
+  overflow-x: auto;
+  margin: 0;
+}
+
+/* ------------------------------------------------------ comparison ----- */
+.compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.9rem;
+  align-items: start;
+}
+
+@media (max-width: 720px) {
+  .compare { grid-template-columns: 1fr; }
+}
+
+.compare h4 {
+  font-family: var(--font-code);
+  font-size: var(--step--1);
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+  margin-bottom: 0.4rem;
+}
+
+/* ------------------------------------------------------ checkpoints ---- */
+.check {
+  border: 1px dashed var(--warn);
+  border-radius: 2px;
+  padding: 0.7rem 0.95rem;
+  background: color-mix(in srgb, var(--warn) 7%, transparent);
+}
+
+.check > summary {
+  cursor: pointer;
+  font-family: var(--font-code);
+  font-size: var(--step--1);
+  color: var(--warn);
+  letter-spacing: 0.04em;
+}
+
+.check > summary::marker { color: var(--warn); }
+.check-body { margin-top: 0.7rem; display: flex; flex-direction: column; gap: 0.6rem; }
+
+/* ------------------------------------------------------ misc bits ----- */
+.rows { display: flex; flex-direction: column; gap: 0.85rem; }
+.grow { flex: 1; }
+
+ul.tight { margin: 0; padding-left: 1.15rem; display: flex; flex-direction: column; gap: 0.4rem; }
+ul.tight li::marker { color: var(--fg-dim); }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--step--1);
+}
+.tablewrap { overflow-x: auto; }
+th, td {
+  text-align: left;
+  padding: 0.42rem 0.7rem;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: top;
+}
+th {
+  font-family: var(--font-code);
+  font-weight: 400;
+  color: var(--fg-dim);
+  font-size: var(--step--1);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+td code { font-size: 0.94em; }
+
+.kbd {
+  font-family: var(--font-code);
+  font-size: 0.85em;
+  border: 1px solid var(--rule);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  padding: 0.05em 0.4em;
+  background: var(--panel-2);
+  color: var(--fg);
+}
+
+/* ------------------------------------------------------ dividers ------- */
+.slide.divider {
+  justify-content: center;
+  gap: 0.6rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.slide.divider::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    repeating-linear-gradient(to right, var(--fg) 0 1px, transparent 1px 5%),
+    repeating-linear-gradient(to bottom, var(--fg) 0 1px, transparent 1px 5%);
+  opacity: 0.055;
+  pointer-events: none;
+}
+
+.divider .partno {
+  font-family: var(--font-code);
+  font-size: var(--step-3);
+  color: var(--note);
+  line-height: 1;
+}
+.divider h2 { font-size: var(--step-3); position: relative; }
+.divider p { position: relative; max-width: 58ch; color: var(--fg-dim); }
+
+/* ------------------------------------------------------ title slide ---- */
+.slide.title { justify-content: center; gap: 1rem; }
+.slide.title h1 { font-size: var(--step-3); }
+.slide.title .sub { color: var(--fg-dim); max-width: 60ch; font-size: var(--step-1); }
+
+/* ------------------------------------------------------ chrome --------- */
+.chrome {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  padding: 0.6rem 1rem;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  border-top: 1px solid var(--rule);
+  backdrop-filter: blur(8px);
+  font-family: var(--font-code);
+  font-size: var(--step--1);
+}
+
+.chrome button {
+  font: inherit;
+  color: var(--fg);
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: 0.3rem 0.85rem;
+  cursor: pointer;
+}
+.chrome button:hover { border-color: var(--note); color: var(--note); }
+.chrome button:focus-visible,
+.check > summary:focus-visible { outline: 2px solid var(--note); outline-offset: 2px; }
+
+#counter { color: var(--fg-dim); min-width: 7.5ch; text-align: center; font-variant-numeric: tabular-nums; }
+#partlabel { color: var(--fg-dim); display: none; }
+@media (min-width: 700px) { #partlabel { display: inline; } }
+
+.progress {
+  position: fixed;
+  top: 0; left: 0;
+  height: 2px;
+  background: var(--note);
+  transition: width 200ms ease-out;
+  z-index: 10;
+}
+@media (prefers-reduced-motion: reduce) { .progress { transition: none; } }
+
+/* ============================================================ print ==== */
+@page { size: A4 landscape; margin: 11mm; }
+
+@media print {
+  /* These selectors must match the specificity of `:root[data-theme="..."]`
+     (0,2,0). A bare `:root` is (0,1,0) and would LOSE to a theme the reader had
+     toggled — media queries contribute no specificity — so the print palette
+     would be silently ignored. */
+  :root,
+  :root[data-theme="dark"],
+  :root[data-theme="light"] {
+    --bg: #FFFFFF; --panel: #FFFFFF; --panel-2: #F1F5F9;
+    --fg: #1A2028; --fg-dim: #55606E; --rule: #B9C4D1;
+    --note: #14608F; --error: #A82A30; --help: #266B42; --warn: #7D5C0B;
+    --c-kw: #6A2FAA; --c-ty: #115A6E; --c-mac: #8F2F62;
+    --c-str: #266B42; --c-num: #8F4C14; --c-com: #6B7686;
+  }
+
+  /* Force backgrounds, borders and rails to render. Chrome and Edge ship with
+     "Background graphics" OFF, which otherwise strips every panel fill and
+     coloured rule and leaves plain text on white. */
+  *, *::before, *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Opt back into the on-screen dark look for a PDF meant to be read on a
+     screen rather than printed on paper. Placed after the light palette and
+     carrying equal-or-higher specificity, so it wins. */
+  :root[data-print="dark"],
+  :root[data-print="dark"][data-theme="dark"],
+  :root[data-print="dark"][data-theme="light"] {
+    --bg: #12151A; --panel: #171B22; --panel-2: #1D222B;
+    --fg: #C9D0DA; --fg-dim: #838E9E; --rule: #29303B;
+    --note: #4FA9E4; --error: #EC6A6E; --help: #5FBE84; --warn: #DCAE4E;
+    --c-kw: #A794F5; --c-ty: #63BDCB; --c-mac: #DE8CB4;
+    --c-str: #85C295; --c-num: #DFA070; --c-com: #626D7D;
+  }
+
+  /* Drives itself from the tokens above, so it follows whichever palette won. */
+  body { background: var(--bg); }
+  .chrome, .progress { display: none !important; }
+  .deck { padding: 0; display: block; }
+  .slide {
+    display: flex !important;
+    break-after: page;
+    page-break-after: always;
+    min-height: auto;
+    width: 100%;
+    border: none;
+    padding: 0 0 0.5rem;
+    animation: none;
+  }
+  .slide:last-child { break-after: auto; page-break-after: auto; }
+  .code, .check, .diag, .compare, table { break-inside: avoid; page-break-inside: avoid; }
+  /* Keep the divider lattice — with colour forced on it now actually prints,
+     and it marks part boundaries when flicking through paper. */
+  .slide.divider::before { opacity: 0.06; }
+  .check > summary { list-style: none; }
+  .check-body { display: flex !important; }
+}
+</style>
+</head>
+<body>
+
+<div class="progress" id="progress"></div>
+
+<main class="deck" id="deck">
+
+<!-- ==================================================== 1 title ======= -->
+<section class="slide title">
+  <span class="eyebrow" id="deckcount">A Rust course</span>
+  <h1>Rust, taught through your Snake game</h1>
+  <p class="sub">Every example on the following slides is a real line from
+  <code>games/snake/src/main.rs</code> — the 410-line program you just built and
+  played. Nothing here is a toy example.</p>
+  <div class="diag">
+    <p class="d-loc">--&gt; written for someone fluent in Python</p>
+    <p><span class="d-tag tag-note">note:</span> your C++ background will help most in Part 3.</p>
+    <p><span class="d-tag tag-warn">warning:</span> your Java/C# instincts will mislead you twice — there is no garbage collector, and there is no <code>null</code>.</p>
+  </div>
+  <p style="color:var(--fg-dim)"><span class="kbd">&larr;</span> <span class="kbd">&rarr;</span> to navigate &nbsp;·&nbsp; <span class="kbd">Home</span> / <span class="kbd">End</span> to jump &nbsp;·&nbsp; Ctrl+P prints one slide per page</p>
+</section>
+
+<!-- ==================================================== 2 what is rust = -->
+<section class="slide">
+  <span class="eyebrow">Part 0 · Orientation</span>
+  <h2>What Rust is, stated against Python</h2>
+  <p class="lede">Four differences explain almost everything that will feel strange. Each one is a deliberate trade: you give up convenience, you get speed and compile-time guarantees.</p>
+  <div class="tablewrap">
+  <table>
+    <tr><th>Python</th><th>Rust</th><th>Why it matters to you</th></tr>
+    <tr><td>Interpreted, runs immediately</td><td>Compiled ahead of time to a native binary</td><td>This is why you waited 21 minutes. It's also why Snake runs at hundreds of FPS.</td></tr>
+    <tr><td>Garbage collector frees memory</td><td>No GC. Memory is freed when its <em>owner</em> goes out of scope</td><td>Part 3. This is the one genuinely new idea.</td></tr>
+    <tr><td>Types checked at runtime</td><td>Types checked at compile time, and inferred aggressively</td><td>Whole classes of bug become impossible to write.</td></tr>
+    <tr><td><code>None</code> can appear anywhere</td><td>No <code>null</code>. Absence is a type: <code>Option&lt;T&gt;</code></td><td>Part 4. You literally cannot forget to handle it.</td></tr>
+  </table>
+  </div>
+  <div class="diag">
+    <p><span class="d-tag tag-note">note:</span> Rust has no runtime and no interpreter. A compiled Snake binary depends on nothing but the OS.</p>
+  </div>
+</section>
+
+<!-- ==================================================== 3 how to read == -->
+<section class="slide">
+  <span class="eyebrow">Part 0 · Orientation</span>
+  <h2>How to read these slides</h2>
+  <p class="lede">The annotations below code blocks are styled after real <code>rustc</code> compiler output, because that is the voice you will spend most of your learning time reading. Rust's compiler is unusually good at teaching.</p>
+  <div class="diag">
+    <p class="d-loc">--&gt; games/snake/src/main.rs:287</p>
+    <p><span class="d-tag tag-note">note:</span> a neutral explanation of what the code does.</p>
+    <p><span class="d-tag tag-help">help:</span> the fix, or the idiomatic way to write it.</p>
+    <p><span class="d-tag tag-warn">warning:</span> a trap that catches people coming from Python.</p>
+    <p><span class="d-tag tag-err">error:</span> this code does not compile — and the slide explains why.</p>
+  </div>
+  <p>Code panels carry the same signal in their left edge: <span style="color:var(--error)">red</span> means it fails to compile, <span style="color:var(--help)">green</span> means it works. You can tell them apart without reading a word.</p>
+  <details class="check">
+    <summary>Checkpoints look like this — try before opening</summary>
+    <div class="check-body"><p>Answers live inside. On a printed copy they are already expanded.</p></div>
+  </details>
+</section>
+
+<!-- ==================================================== 4 map ========== -->
+<section class="slide">
+  <span class="eyebrow">Part 0 · Orientation</span>
+  <h2>The shape of the file</h2>
+  <p class="lede">Before any syntax, know the territory. <code>main.rs</code> has five regions, in this order.</p>
+  <div class="tablewrap">
+  <table>
+    <tr><th>Lines</th><th>Region</th><th>What lives there</th></tr>
+    <tr><td>1–13</td><td>Header</td><td>Module docs (<code>//!</code>) and <code>use</code> imports</td></tr>
+    <tr><td>15–31</td><td>Tuning</td><td><code>const</code> values: grid size, colours, tick rate</td></tr>
+    <tr><td>33–102</td><td>Types</td><td>The structs and enums that model the game</td></tr>
+    <tr><td>106–140</td><td><code>main</code></td><td>Assembles the app and lists every system</td></tr>
+    <tr><td>142–410</td><td>Systems</td><td>Plain functions: one per behaviour</td></tr>
+  </table>
+  </div>
+  <div class="diag">
+    <p><span class="d-tag tag-note">note:</span> there are no classes anywhere in this file. Data (structs) and behaviour (functions) are kept separate — closer to C than to Python or Java.</p>
+  </div>
+</section>
+
+<!-- ==================================================== DIV 1 ========== -->
+<section class="slide divider">
+  <span class="partno">01</span>
+  <h2>Syntax you can already read</h2>
+  <p>Most of Rust's surface will feel familiar from C# and C++. Five things differ enough from Python to trip you up early.</p>
+</section>
+
+<!-- ==================================================== 5 fn =========== -->
+<section class="slide">
+  <span class="eyebrow">Part 1 · Syntax</span>
+  <h2>Functions: types on the right, and the last line is the return</h2>
+  <figure class="code">
+    <figcaption><span>main.rs:143–147</span><span>fn world_pos</span></figcaption>
+<pre><code class="rust">fn world_pos(p: Pos, z: f32) -&gt; Vec3 {
+    let ox = (GRID_W as f32 - 1.0) * 0.5;
+    let oy = (GRID_H as f32 - 1.0) * 0.5;
+    Vec3::new((p.x as f32 - ox) * CELL, (p.y as f32 - oy) * CELL, z)
+}</code></pre>
+  </figure>
+  <div class="compare">
+    <div>
+      <h4>Python</h4>
+      <figure class="code"><pre><code class="python">def world_pos(p, z):
+    ...
+    return Vec3(...)</code></pre></figure>
+    </div>
+    <div>
+      <h4>Rust</h4>
+      <figure class="code"><pre><code class="rust">fn world_pos(p: Pos, z: f32) -&gt; Vec3 {
+    ...
+    Vec3::new(...)
+}</code></pre></figure>
+    </div>
+  </div>
+  <div class="diag">
+    <p><span class="d-tag tag-note">note:</span> annotations are mandatory on parameters and return type. Inside a body, <code>let ox = ...</code> needs no type — it is inferred.</p>
+    <p><span class="d-tag tag-note">note:</span> the final line has <strong>no semicolon</strong> and no <code>return</code>. An expression without a semicolon is the function's value.</p>
+    <p><span class="d-tag tag-warn">warning:</span> add a semicolon to that last line and the function returns <code>()</code> — "unit", Rust's <code>None</code>-ish empty value — and it stops compiling. A missing or extra semicolon is a <em>meaning</em> change here, not a style choice.</p>
+  </div>
+</section>
+
+<!-- ==================================================== 6 let/mut ====== -->
+<section class="slide">
+  <span class="eyebrow">Part 1 · Syntax</span>
+  <h2><code>let</code> is immutable by default</h2>
+  <p class="lede">This is backwards from every language you know. In Rust, variables cannot be reassigned unless you opt in with <code>mut</code>.</p>
+  <figure class="code is-error">
+    <figcaption><span>does not compile</span><span>error[E0384]</span></figcaption>
+<pre><code class="rust">let score = 0;
+score = score + 1;   // error: cannot assign twice to immutable variable</code></pre>
+  </figure>
+  <figure class="code is-help">
+    <figcaption><span>main.rs:347–349</span><span>real code from spawn_food's caller</span></figcaption>
+<pre><code class="rust">let mut occupied = vec![new_head];
+occupied.extend_from_slice(&amp;old[..old.len() - 1]);
+occupied.push(tail);</code></pre>
+  </figure>
+  <div class="diag">
+    <p><span class="d-tag tag-note">note:</span> <code>mut</code> appears in your file only where something genuinely changes. Scan for it — it is a reliable map of where state moves.</p>
+    <p><span class="d-tag tag-help">help:</span> read <code>mut</code> as documentation. In Python you must read a whole function to learn whether a list gets mutated; in Rust the signature tells you.</p>
+  </div>
+</section>
+
+<!-- ==================================================== 7 const ======== -->
+<section class="slide">
+  <span class="eyebrow">Part 1 · Syntax</span>
+  <h2><code>const</code>: compile-time values, types required</h2>
+  <figure class="code">
+    <figcaption><span>main.rs:17–24</span><span>the tuning block</span></figcaption>
+<pre><code class="rust">const GRID_W: i32 = 20;
+const GRID_H: i32 = 20;
+/// World units per grid cell. With the default 2D camera these are pixels.
+const CELL: f32 = 28.0;
+/// Shrinks each sprite slightly so cells read as separate blocks.
+const CELL_INSET: f32 = 3.0;
+/// Seconds between snake steps. Lower is harder.
+const TICK: f32 = 0.15;</code></pre>
+  </figure>
+  <div class="diag">
+    <p><span class="d-tag tag-note">note:</span> unlike <code>let</code>, a <code>const</code> <em>must</em> be annotated. It has no memory address — the compiler pastes the value in wherever it is used, so there is zero runtime cost.</p>
+    <p><span class="d-tag tag-note">note:</span> <code>///</code> is a doc comment attached to the item below it. <code>//</code> is an ordinary comment; <code>//!</code> at the top of the file documents the whole module.</p>
+    <p><span class="d-tag tag-help">help:</span> Python's <code>SCREAMING_CASE</code> is a convention nobody enforces. Rust's <code>const</code> is enforced by the compiler — you cannot assign to it.</p>
+  </div>
+</section>
+
+<!-- ==================================================== 8 numbers ====== -->
+<section class="slide">
+  <span class="eyebrow">Part 1 · Syntax</span>
+  <h2>There is no such thing as "a number"</h2>
+  <p class="lede">Python has one <code>int</code> and one <code>float</code>. Rust has a dozen numeric types, and it will <strong>never</strong> convert between them behind your back.</p>
+  <figure class="code">
+    <figcaption><span>main.rs:112–115</span><span>every cast written out</span></figcaption>
+<pre><code class="rust">resolution: WindowResolution::new(
+    GRID_W as u32 * CELL as u32 + 80,
+    GRID_H as u32 * CELL as u32 + 80,
+),</code></pre>
+  </figure>
+  <div class="tablewrap">
+  <table>
+    <tr><th>Type</th><th>Means</th><th>Where it appears in your file</th></tr>
+    <tr><td><code>i32</code></td><td>signed 32-bit integer</td><td><code>GRID_W</code>, and <code>Pos.x</code> — signed so off-board <code>-1</code> is representable</td></tr>
+    <tr><td><code>u32</code></td><td>unsigned — cannot be negative</td><td><code>Score(u32)</code>; a score below zero is meaningless</td></tr>
+    <tr><td><code>f32</code></td><td>32-bit float</td><td><code>CELL</code>, <code>TICK</code>, all world coordinates</td></tr>
+    <tr><td><code>usize</code></td><td>pointer-sized; the type of every index and length</td><td><code>old.len()</code>, and every <code>Vec</code> index</td></tr>
+  </table>
+  </div>
+  <div class="diag">
+    <p><span class="d-tag tag-warn">warning:</span> <code>GRID_W * CELL</code> alone is a compile error — <code>i32 * f32</code> has no meaning to Rust. Every <code>as</code> in your file is you telling the compiler the conversion is intended.</p>
+    <p><span class="d-tag tag-note">note:</span> choosing <code>i32</code> for <code>Pos</code> is a design decision. The bounds check at line 315 asks <code>new_head.x &lt; 0</code> — impossible to express if the field were <code>u32</code>.</p>
+  </div>
+</section>
+
+<!-- ==================================================== 9 expressions == -->
+<section class="slide">
+  <span class="eyebrow">Part 1 · Syntax</span>
+  <h2>Almost everything is an expression</h2>
+  <p class="lede"><code>if</code> is not a statement in Rust — it produces a value. This is Python's ternary, generalised to everything.</p>
+  <figure class="code">
+    <figcaption><span>main.rs:194–198</span><span>inside spawn_segment</span></figcaption>
+<pre><code class="rust">Sprite::from_color(
+    if is_head { HEAD_COLOR } else { BODY_COLOR },
+    Vec2::splat(CELL - CELL_INSET),
+),
+Transform::from_translation(world_pos(p, if is_head { 2.0 } else { 1.5 })),</code></pre>
+  </figure>
+  <div class="compare">
+    <div><h4>Python</h4>
+      <figure class="code"><pre><code class="python">HEAD_COLOR if is_head else BODY_COLOR</code></pre></figure>
+    </div>
+    <div><h4>Rust</h4>
+      <figure class="code"><pre><code class="rust">if is_head { HEAD_COLOR } else { BODY_COLOR }</code></pre></figure>
+    </div>
+  </div>
+  <div class="diag">
+    <p><span class="d-tag tag-note">note:</span> both arms must have the same type — the compiler needs one type for the whole expression.</p>
+    <p><span class="d-tag tag-note">note:</span> the same is true of <code>match</code>, which is why <code>Dir::delta</code> on a later slide can return a value directly from its arms.</p>
+  </div>
+</section>
+
+<!-- ==================================================== DIV 2 ========== -->
+<section class="slide divider">
+  <span class="partno">02</span>
+  <h2>Modelling data</h2>
+  <p>Rust has no classes. Instead it gives you two tools — structs and enums — and the enums are far more powerful than the ones you know.</p>
+</section>
+
+<!-- ==================================================== 10 structs ===== -->
+<section class="slide">
+  <span class="eyebrow">Part 2 · Data</span>
+  <h2>Structs: data with no behaviour attached</h2>
+  <figure class="code">
+    <figcaption><span>main.rs:42–47</span><span>the type the whole game is built on</span></figcaption>
+<pre><code class="rust">/// A cell on the board. `(0, 0)` is bottom-left.
+#[derive(Component, Clone, Copy, PartialEq, Eq, Debug)]
+struct Pos {
+    x: i32,
+    y: i32,
+}</code></pre>
+  </figure>
+  <figure class="code">
+    <figcaption><span>main.rs:310–313</span><span>constructing one</span></figcaption>
+<pre><code class="rust">let new_head = Pos {
+    x: head.x + dx,
+    y: head.y + dy,
+};</code></pre>
+  </figure>
+  <div class="diag">
+    <p><span class="d-tag tag-note">note:</span> no <code>__init__</code>, no constructor. You name every field at the point of creation, and the compiler rejects it if you miss one.</p>
+    <p><span class="d-tag tag-help">help:</span> when a variable already has the field's name you may write it once. Line 207 says <code>Pos { x, y }</code> — shorthand for <code>Pos { x: x, y: y }</code>.</p>
+  </div>
+</section>
+
+<!-- ==================================================== 11 newtype ===== -->
+<section class="slide">
+  <span class="eyebrow">Part 2 · Data</span>
+  <h2>Tuple structs: giving a plain value a distinct type</h2>
+  <figure class="code">
+    <figcaption><span>main.rs:95–102</span><span>three wrappers</span></figcaption>
+<pre><code class="rust">#[derive(Resource, Deref, DerefMut)]
+struct GameRng(ChaCha8Rng);
+
+#[derive(Resource, Deref, DerefMut)]
+struct Tick(Timer);
+
+#[derive(Resource, Default)]
+struct Score(u32);</code></pre>
+  </figure>
+  <figure class="code">
+    <figcaption><span>main.rs:339</span><span>fields are accessed by position</span></figcaption>
+<pre><code class="rust">score.0 += 1;</code></pre>
+  </figure>
+  <div class="diag">
+    <p><span class="d-tag tag-note">note:</span> <code>Score</code> is "a <code>u32</code>, but its own type". This is called the <em>newtype</em> pattern and it costs nothing at runtime.</p>
+    <p><span class="d-tag tag-help">help:</span> the payoff is that a function taking a <code>Score</code> can never be handed a <code>Tick</code> by mistake, even though both wrap a number. In Python both would just be <code>int</code> and the bug would be yours to find.</p>
+  </div>
+</section>
+
+<!-- ==================================================== 12 unit ======== -->
+<section class="slide">
+  <span class="eyebrow">Part 2 · Data</span>
+  <h2>Unit structs: types that hold nothing at all</h2>
+  <figure class="code">
+    <figcaption><span>main.rs:49–53</span><span>pure labels</span></figcaption>
+<pre><code class="rust">#[derive(Component)]
+struct Food;
+
+#[derive(Component)]
+struct ScoreUi;</code></pre>
+  </figure>
+  <p>These occupy zero bytes. They exist so that other code can ask a question about a <em>type</em>:</p>
+  <figure class="code is-note">
+    <figcaption><span>main.rs:287–288</span><span>where the labels earn their keep</span></figcaption>
+<pre><code class="rust">mut positions: Query&lt;&amp;mut Pos, Without&lt;Food&gt;&gt;,
+food: Query&lt;(Entity, &amp;Pos), With&lt;Food&gt;&gt;,</code></pre>
+  </figure>
+  <div class="diag">
+    <p><span class="d-tag tag-note">note:</span> <code>Food</code> stores nothing, yet it is the thing that distinguishes "the snake's cells" from "the food's cell". The information lives in the type, not in a field.</p>
+    <p><span class="d-tag tag-warn">warning:</span> this is the single most alien idea on this slide for a Python developer. There is no runtime attribute to inspect — <code>Food</code> exists only at compile time.</p>
+  </div>
+</section>
+
+<!-- ==================================================== 13 enums ======= -->
+<section class="slide">
+  <span class="eyebrow">Part 2 · Data</span>
+  <h2>Enums are closed sets — and the compiler knows it</h2>
+  <figure class="code">
+    <figcaption><span>main.rs:55–61</span><span>every direction the snake can face</span></figcaption>
+<pre><code class="rust">#[derive(Clone, Copy, PartialEq, Eq)]
+enum Dir {
+    Up,
+    Down,
+    Left,
+    Right,
+}</code></pre>
+  </figure>
+  <div class="compare">
+    <div><h4>Python — a hint</h4>
+      <figure class="code"><pre><code class="python">class Dir(Enum):
+    UP = 1
+    DOWN = 2
+# nothing stops: d = "banana"</code></pre></figure>
+    </div>
+    <div><h4>Rust — a guarantee</h4>
+      <figure class="code"><pre><code class="rust">let d: Dir = Dir::Up;
+// there is no fifth possibility.
+// "banana" will not compile.</code></pre></figure>
+    </div>
+  </div>
+  <div class="diag">
+    <p><span class="d-tag tag-note">note:</span> a value of type <code>Dir</code> is <em>always</em> exactly one of those four. Not null, not a string, not an integer that drifted out of range.</p>
+    <p><span class="d-tag tag-help">help:</span> Rust enums can also carry data per variant — that is how <code>Option</code> and <code>Result</code> in Part 4 are built. Yours don't need to.</p>
+  </div>
+</section>
+
+<!-- ==================================================== 14 match ======= -->
+<section class="slide">
+  <span class="eyebrow">Part 2 · Data</span>
+  <h2><code>match</code>, and why exhaustiveness is the point</h2>
+  <figure class="code">
+    <figcaption><span>main.rs:64–71</span><span>Dir::delta</span></figcaption>
+<pre><code class="rust">fn delta(self) -&gt; (i32, i32) {
+    match self {
+        Dir::Up =&gt; (0, 1),
+        Dir::Down =&gt; (0, -1),
+        Dir::Left =&gt; (-1, 0),
+        Dir::Right =&gt; (1, 0),
+    }
+}</code></pre>
+  </figure>
+  <div class="diag">
+    <p><span class="d-tag tag-note">note:</span> no <code>return</code>, no semicolons on the arms. <code>match</code> is an expression, so its value is the function's value.</p>
+    <p><span class="d-tag tag-note">note:</span> <code>(i32, i32)</code> is a tuple — an anonymous pair. Line 295 unpacks it exactly like Python: <code>let (dx, dy) = snake.dir.delta();</code></p>
+    <p><span class="d-tag tag-help">help:</span> delete one arm and the compiler refuses to build, naming the variant you forgot. Python's <code>match</code> silently falls through. This is the difference between a linter and a guarantee.</p>
+  </div>
+  <p>The same exhaustiveness powers <code>matches!</code>, a macro that answers "does this fit the pattern?" as a <code>bool</code> — used at line 74 to reject a 180° turn.</p>
+</section>
+
+<!-- ==================================================== 15 impl ======== -->
+<section class="slide">
+  <span class="eyebrow">Part 2 · Data</span>
+  <h2><code>impl</code>: attaching methods after the fact</h2>
+  <figure class="code">
+    <figcaption><span>main.rs:63, 73–82</span><span>Dir gains behaviour</span></figcaption>
+<pre><code class="rust">impl Dir {
+    fn is_opposite(self, other: Dir) -&gt; bool {
+        matches!(
+            (self, other),
+            (Dir::Up, Dir::Down)
+                | (Dir::Down, Dir::Up)
+                | (Dir::Left, Dir::Right)
+                | (Dir::Right, Dir::Left)
+        )
+    }
+}</code></pre>
+  </figure>
+  <div class="diag">
+    <p><span class="d-tag tag-note">note:</span> the data (<code>enum Dir</code>) and the behaviour (<code>impl Dir</code>) are declared separately. A class glues them together; Rust does not.</p>
+    <p><span class="d-tag tag-note">note:</span> <code>self</code> is the receiver, like Python — but here it is taken <em>by value</em>, not by reference, because <code>Dir</code> is tiny and <code>Copy</code>. More on that in Part 3.</p>
+    <p><span class="d-tag tag-help">help:</span> call it as <code>d.is_opposite(snake.dir)</code> — line 270 does exactly that.</p>
+  </div>
+</section>
+
+<!-- ==================================================== 16 checkpoint == -->
+<section class="slide">
+  <span class="eyebrow">Part 2 · Checkpoint</span>
+  <h2>Checkpoint — the compiler as a to-do list</h2>
+  <p class="lede">Suppose you decide the snake should move diagonally, and add a fifth variant:</p>
+  <figure class="code">
+    <figcaption><span>hypothetical edit to main.rs:55</span></figcaption>
+<pre><code class="rust">enum Dir {
+    Up,
+    Down,
+    Left,
+    Right,
+    UpLeft,   // new
+}</code></pre>
+  </figure>
+  <details class="check">
+    <summary>Which function stops compiling, and why is that a good thing?</summary>
+    <div class="check-body">
+      <p><strong><code>Dir::delta</code> at line 64.</strong> Its <code>match</code> now fails to cover every case, and the compiler reports it with the exact missing variant.</p>
+      <p><code>is_opposite</code> keeps compiling — <code>matches!</code> returns <code>false</code> for anything unlisted, which is still correct behaviour.</p>
+      <p>It is a good thing because the compiler has just handed you a precise to-do list. In Python the equivalent change would compile, run, and produce a snake that silently refuses to move diagonally — a bug you would find by playing, not by building.</p>
+      <p>This is the single habit to take from Rust: <em>make the compiler find your unfinished work.</em></p>
+    </div>
+  </details>
+</section>
+
+<!-- ==================================================== DIV 3 ========== -->
+<section class="slide divider">
+  <span class="partno">03</span>
+  <h2>Ownership and borrowing</h2>
+  <p>The heart of the language, and the only part with no Python equivalent. If you have written C++ with <code>unique_ptr</code> and RAII, you already know most of it.</p>
+</section>
+
+<!-- ==================================================== 17 move ======== -->
+<section class="slide">
+  <span class="eyebrow">Part 3 · Ownership</span>
+  <h2>Every value has exactly one owner</h2>
+  <p class="lede">When the owner goes out of scope, the value is freed. No GC, no reference counting, no pause — the compiler inserts the cleanup at the closing brace.</p>
+  <figure class="code">
+    <figcaption><span>main.rs:234–251</span><span>abridged — the vector changes hands</span></figcaption>
+<pre><code class="rust">let body = vec![
+    spawn_segment(&amp;mut commands, start, true),
+    // ...
+];
+
+commands.insert_resource(Snake {
+    body,                    // &lt;-- moved here
+    dir: Dir::Right,
+    next_dir: Dir::Right,
+});</code></pre>
+  </figure>
+  <div class="diag">
+    <p><span class="d-tag tag-note">note:</span> after line 248, the local <code>body</code> is <em>gone</em>. Ownership moved into the <code>Snake</code>. Touching <code>body</code> afterwards is a compile error, not a runtime surprise.</p>
+    <p><span class="d-tag tag-warn">warning:</span> in Python, <code>a = b</code> makes two names for one list. In Rust it makes <code>b</code> unusable. This is the assignment that breaks Python intuition hardest.</p>
+    <p><span class="d-tag tag-help">help:</span> C++ analogy: this is <code>std::move</code>, except it is the default rather than something you opt into.</p>
+  </div>
+</section>
+
+<!-- ==================================================== 18 copy ======== -->
+<section class="slide">
+  <span class="eyebrow">Part 3 · Ownership</span>
+  <h2>...unless the type is <code>Copy</code></h2>
+  <p class="lede">Small, fixed-size values sitting entirely on the stack can opt out of move semantics. <code>Pos</code> does.</p>
+  <figure class="code is-help">
+    <figcaption><span>main.rs:43</span><span>the opt-in</span></figcaption>
+<pre><code class="rust">#[derive(Component, Clone, Copy, PartialEq, Eq, Debug)]
+struct Pos { x: i32, y: i32 }</code></pre>
+  </figure>
+  <figure class="code">
+    <figcaption><span>main.rs:309</span><span>so this duplicates rather than moves</span></figcaption>
+<pre><code class="rust">let head = old[0];   // old still fully usable afterwards</code></pre>
+  </figure>
+  <div class="diag">
+    <p><span class="d-tag tag-note">note:</span> <code>Pos</code> is 8 bytes. Copying it is cheaper than reasoning about who owns it, so <code>Copy</code> is the right call.</p>
+    <p><span class="d-tag tag-warn">warning:</span> <code>Vec</code> can never be <code>Copy</code>. It owns memory on the heap, and two owners would mean a double free. This is exactly the bug class Rust exists to eliminate.</p>
+    <p><span class="d-tag tag-help">help:</span> rule of thumb — <code>Copy</code> for small stack-only values, move for anything owning heap memory.</p>
+  </div>
+</section>
+
+<!-- ==================================================== 19 borrow ====== -->
+<section class="slide">
+  <span class="eyebrow">Part 3 · Ownership</span>
+  <h2>Borrowing: access without taking ownership</h2>
+  <p class="lede">Moving into every function would be unusable. Instead you lend a reference: <code>&amp;T</code> to read, <code>&amp;mut T</code> to modify.</p>
+  <figure class="code">
+    <figcaption><span>main.rs:205</span><span>the signature says everything</span></figcaption>
+<pre><code class="rust">fn spawn_food(commands: &amp;mut Commands, rng: &amp;mut ChaCha8Rng, occupied: &amp;[Pos]) {</code></pre>
+  </figure>
+  <div class="diag">
+    <p class="d-loc">--&gt; read that signature as a contract</p>
+    <p><span class="d-tag tag-note">note:</span> <code>&amp;mut Commands</code> — "I will modify this, but I am not keeping it."</p>
+    <p><span class="d-tag tag-note">note:</span> <code>&amp;[Pos]</code> — "I will only read this, and I am not keeping it."</p>
+    <p><span class="d-tag tag-help">help:</span> the caller at line 245 must say so too: <code>spawn_food(&amp;mut commands, &amp;mut rng.0, &amp;occupied)</code>. Borrowing is explicit on both sides — you can never be surprised about which functions mutate your data.</p>
+    <p><span class="d-tag tag-warn">warning:</span> in Python every argument is passed this way invisibly, and whether a function mutates your list is something you discover by reading its body. Here it is in the type.</p>
+  </div>
+</section>
+
+<!-- ==================================================== 20 borrow rule = -->
+<section class="slide">
+  <span class="eyebrow">Part 3 · Ownership</span>
+  <h2>The one rule that governs all of it</h2>
+  <p class="lede">At any moment, for any piece of data, you may have <strong>either</strong> any number of readers <strong>or</strong> exactly one writer. Never both.</p>
+  <figure class="code is-error">
+    <figcaption><span>illustration — does not compile</span><span>error[E0502]</span></figcaption>
+<pre><code class="rust">let mut v = vec![1, 2, 3];
+let first = &amp;v[0];      // a reader is alive
+v.push(4);              // ...and now a writer. rejected.
+println!("{}", first);</code></pre>
+  </figure>
+  <div class="diag">
+    <p><span class="d-tag tag-note">note:</span> <code>push</code> may reallocate the vector, which would leave <code>first</code> pointing at freed memory. In C++ this compiles and is a dangling pointer. Here it is a compile error.</p>
+    <p><span class="d-tag tag-help">help:</span> this rule also makes data races impossible to write, which is why Bevy can run your systems across threads without you thinking about locks.</p>
+    <p><span class="d-tag tag-warn">warning:</span> you <em>will</em> fight this rule early on. Every fight is the compiler pointing at a real aliasing bug you would otherwise have shipped.</p>
+  </div>
+</section>
+
+<!-- ==================================================== 21 payoff ====== -->
+<section class="slide">
+  <span class="eyebrow">Part 3 · Ownership</span>
+  <h2>The rule, in the bug you actually hit</h2>
+  <p class="lede">Snake crashed on its first run with <code>error[B0001]</code>. That was this exact rule — enforced by Bevy at runtime, because it could not be proved at compile time.</p>
+  <figure class="code is-error">
+    <figcaption><span>what was originally written</span><span>panicked instantly</span></figcaption>
+<pre><code class="rust">mut positions: Query&lt;&amp;mut Pos&gt;,               // writer over ALL Pos
+food: Query&lt;(Entity, &amp;Pos), With&lt;Food&gt;&gt;,     // reader over food's Pos</code></pre>
+  </figure>
+  <pre class="carets">                  ^^^^^^^^^^^^^^^ these two overlap: food has a Pos too</pre>
+  <figure class="code is-help">
+    <figcaption><span>main.rs:287–288</span><span>the fix, currently in your file</span></figcaption>
+<pre><code class="rust">mut positions: Query&lt;&amp;mut Pos, Without&lt;Food&gt;&gt;,
+food: Query&lt;(Entity, &amp;Pos), With&lt;Food&gt;&gt;,</code></pre>
+  </figure>
+  <div class="diag">
+    <p><span class="d-tag tag-note">note:</span> <code>Without&lt;Food&gt;</code> makes the two sets provably disjoint — one writer here, one reader there, never the same entity.</p>
+    <p><span class="d-tag tag-warn">warning:</span> <code>cargo check</code> passed with zero warnings. The compiler enforces this rule for plain references, but a <code>Query</code> is resolved at runtime, so Bevy re-implements the check itself. <strong>Type-checking is not validation — you must run the program.</strong></p>
+  </div>
+</section>
+
+<!-- ==================================================== 22 slices ====== -->
+<section class="slide">
+  <span class="eyebrow">Part 3 · Ownership</span>
+  <h2>Slices: a borrowed window onto a sequence</h2>
+  <figure class="code">
+    <figcaption><span>main.rs:320–322</span><span>the self-collision test</span></figcaption>
+<pre><code class="rust">// Self collision. The final segment is excluded because it vacates its cell
+// on this same tick — moving into it is legal.
+if old[..old.len() - 1].contains(&amp;new_head) {</code></pre>
+  </figure>
+  <div class="compare">
+    <div><h4>Python — copies</h4>
+      <figure class="code"><pre><code class="python">old[:-1]   # builds a new list</code></pre></figure>
+    </div>
+    <div><h4>Rust — borrows</h4>
+      <figure class="code"><pre><code class="rust">&amp;old[..old.len() - 1]   // no allocation</code></pre></figure>
+    </div>
+  </div>
+  <div class="diag">
+    <p><span class="d-tag tag-note">note:</span> a slice is a pointer plus a length. Slicing allocates nothing and copies nothing, however large the vector.</p>
+    <p><span class="d-tag tag-note">note:</span> because it borrows, the slice cannot outlive <code>old</code> — and the compiler enforces that. This is why Rust needs no GC to stay memory-safe.</p>
+    <p><span class="d-tag tag-help">help:</span> prefer <code>&amp;[T]</code> over <code>&amp;Vec&lt;T&gt;</code> in parameters, as <code>spawn_food</code> does — it accepts vectors, arrays and slices alike.</p>
+  </div>
+</section>
+
+<!-- ==================================================== 23 checkpoint == -->
+<section class="slide">
+  <span class="eyebrow">Part 3 · Checkpoint</span>
+  <h2>Checkpoint — move or copy?</h2>
+  <figure class="code">
+    <figcaption><span>both from snake_tick</span></figcaption>
+<pre><code class="rust">let head = old[0];       // (a)
+// ...
+snake.body.push(grown);  // (b)</code></pre>
+  </figure>
+  <details class="check">
+    <summary>Why does (a) leave <code>old</code> usable, while assigning <code>snake.body</code> to a new variable would not?</summary>
+    <div class="check-body">
+      <p><strong>(a)</strong> <code>old</code> is a <code>Vec&lt;Pos&gt;</code>, and <code>Pos</code> derives <code>Copy</code>. Indexing yields a <em>duplicate</em> of those 8 bytes, so <code>old</code> is untouched.</p>
+      <p><strong>(b)</strong> <code>snake.body</code> is a <code>Vec&lt;Entity&gt;</code>, which owns heap memory and therefore cannot be <code>Copy</code>. Writing <code>let b = snake.body;</code> would try to move a field out of a borrowed struct — and the compiler rejects it outright.</p>
+      <p>The general test: <em>does this type own anything on the heap?</em> If yes, it moves. If it is a small stack-only value, it can be <code>Copy</code>.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ==================================================== DIV 4 ========== -->
+<section class="slide divider">
+  <span class="partno">04</span>
+  <h2>Absence and failure, without <code>null</code></h2>
+  <p>Rust has no <code>None</code> that can appear anywhere and no exceptions. Both are replaced by ordinary enums that the compiler makes you open.</p>
+</section>
+
+<!-- ==================================================== 24 option ====== -->
+<section class="slide">
+  <span class="eyebrow">Part 4 · Option &amp; Result</span>
+  <h2><code>Option&lt;T&gt;</code>: maybe-a-value, in the type system</h2>
+  <figure class="code">
+    <figcaption><span>main.rs:255–265</span><span>read_input</span></figcaption>
+<pre><code class="rust">let requested = if keys.any_pressed([KeyCode::ArrowUp, KeyCode::KeyW]) {
+    Some(Dir::Up)
+} else if keys.any_pressed([KeyCode::ArrowDown, KeyCode::KeyS]) {
+    Some(Dir::Down)
+// ...
+} else {
+    None
+};</code></pre>
+  </figure>
+  <p><code>requested</code> has type <code>Option&lt;Dir&gt;</code>. That is a plain enum with two variants — nothing magic:</p>
+  <figure class="code">
+    <figcaption><span>from the standard library</span></figcaption>
+<pre><code class="rust">enum Option&lt;T&gt; {
+    Some(T),
+    None,
+}</code></pre>
+  </figure>
+  <div class="diag">
+    <p><span class="d-tag tag-note">note:</span> this is an enum whose variants <em>carry data</em> — <code>Some</code> holds a <code>T</code>. The tool from Part 2, used for something Python needs a special value for.</p>
+    <p><span class="d-tag tag-help">help:</span> a <code>Dir</code> is always a real direction. Only <code>Option&lt;Dir&gt;</code> can be absent, and you can see which is which in the signature.</p>
+  </div>
+</section>
+
+<!-- ==================================================== 25 if let ====== -->
+<section class="slide">
+  <span class="eyebrow">Part 4 · Option &amp; Result</span>
+  <h2>You cannot use the value without opening the box</h2>
+  <figure class="code">
+    <figcaption><span>main.rs:269–273</span><span>the end of read_input</span></figcaption>
+<pre><code class="rust">if let Some(d) = requested {
+    if !d.is_opposite(snake.dir) {
+        snake.next_dir = d;
+    }
+}</code></pre>
+  </figure>
+  <div class="compare">
+    <div><h4>Python — hope</h4>
+      <figure class="code"><pre><code class="python">if requested is not None:
+    ...
+# forget the check and you get
+# AttributeError at 3am</code></pre></figure>
+    </div>
+    <div><h4>Rust — enforced</h4>
+      <figure class="code"><pre><code class="rust">if let Some(d) = requested {
+    // d is a Dir here, guaranteed
+}</code></pre></figure>
+    </div>
+  </div>
+  <div class="diag">
+    <p><span class="d-tag tag-note">note:</span> <code>if let</code> is a one-armed <code>match</code>: run this block only if the value matches this pattern, and bind <code>d</code> to the contents.</p>
+    <p><span class="d-tag tag-help">help:</span> inside the block <code>d</code> is a plain <code>Dir</code>. The absence has been handled, so it cannot resurface later.</p>
+  </div>
+</section>
+
+<!-- ==================================================== 26 result ====== -->
+<section class="slide">
+  <span class="eyebrow">Part 4 · Option &amp; Result</span>
+  <h2><code>Result&lt;T, E&gt;</code>: failure as a value, not an exception</h2>
+  <figure class="code">
+    <figcaption><span>main.rs:298–302</span><span>snapshotting the snake's cells</span></figcaption>
+<pre><code class="rust">let old: Vec&lt;Pos&gt; = snake
+    .body
+    .iter()
+    .filter_map(|e| positions.get(*e).ok().copied())
+    .collect();</code></pre>
+  </figure>
+  <div class="diag">
+    <p class="d-loc">--&gt; reading <code>positions.get(*e).ok().copied()</code> right to left</p>
+    <p><span class="d-tag tag-note">note:</span> <code>.get(*e)</code> returns <code>Result&lt;&amp;Pos, QueryEntityError&gt;</code> — the entity might not exist.</p>
+    <p><span class="d-tag tag-note">note:</span> <code>.ok()</code> discards the error detail, converting <code>Result</code> into <code>Option</code>.</p>
+    <p><span class="d-tag tag-note">note:</span> <code>.copied()</code> turns <code>Option&lt;&amp;Pos&gt;</code> into <code>Option&lt;Pos&gt;</code> — legal only because <code>Pos</code> is <code>Copy</code>. Part 3 pays off again.</p>
+    <p><span class="d-tag tag-help">help:</span> there is no <code>try</code>/<code>except</code> in Rust. A function that can fail says so in its return type, so failure is impossible to overlook.</p>
+  </div>
+</section>
+
+<!-- ==================================================== 27 unwrap ====== -->
+<section class="slide">
+  <span class="eyebrow">Part 4 · Option &amp; Result</span>
+  <h2><code>.unwrap()</code> — the escape hatch, and its price</h2>
+  <p class="lede"><code>.unwrap()</code> says "give me the value, and crash the program if there isn't one". Sometimes that is honest. Often it is a landmine.</p>
+  <figure class="code is-warn">
+    <figcaption><span>main.rs:343</span><span>an unwrap that is safe — but only because of line 305</span></figcaption>
+<pre><code class="rust">let tail = *old.last().unwrap();</code></pre>
+  </figure>
+  <figure class="code is-help">
+    <figcaption><span>main.rs:304–307</span><span>the guard that makes it safe</span></figcaption>
+<pre><code class="rust">// A despawn mid-round would desync body and positions; bail rather than panic.
+if old.len() != snake.body.len() {
+    return;
+}</code></pre>
+  </figure>
+  <div class="diag">
+    <p><span class="d-tag tag-note">note:</span> the snake always has at least three segments, so <code>last()</code> cannot be <code>None</code> — and the guard above makes that reasoning airtight rather than merely likely.</p>
+    <p><span class="d-tag tag-help">help:</span> treat every <code>.unwrap()</code> as owing the reader a justification. Where the reasoning is not airtight, return early instead — which is exactly what line 305 does.</p>
+  </div>
+</section>
+
+<!-- ==================================================== 28 checkpoint == -->
+<section class="slide">
+  <span class="eyebrow">Part 4 · Checkpoint</span>
+  <h2>Checkpoint — can you make it panic?</h2>
+  <p class="lede">Line 343 is <code>let tail = *old.last().unwrap();</code>. It runs only inside the <code>if let Some(...)</code> block that handles eating food.</p>
+  <details class="check">
+    <summary>Is there any reachable state where this panics?</summary>
+    <div class="check-body">
+      <p><strong>No — and it takes three separate facts to be sure.</strong></p>
+      <ul class="tight">
+        <li><code>spawn_snake</code> always creates exactly three segments (line 234), so <code>body</code> is never empty.</li>
+        <li>Segments are only ever added (line 345), never removed during play.</li>
+        <li>The guard at line 305 returns early if <code>old</code> and <code>body</code> ever disagree in length.</li>
+      </ul>
+      <p>Note what that costs: proving one <code>.unwrap()</code> safe required reasoning about three distant parts of the file. That is precisely why <code>.unwrap()</code> deserves suspicion — the proof lives nowhere near the call.</p>
+      <p>The leading <code>*</code> is a dereference: <code>last()</code> hands back <code>&amp;Pos</code>, and <code>*</code> copies the <code>Pos</code> out. Legal only because <code>Pos</code> is <code>Copy</code>.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ==================================================== DIV 5 ========== -->
+<section class="slide divider">
+  <span class="partno">05</span>
+  <h2>Traits and generics</h2>
+  <p>How Rust does polymorphism without inheritance — and what all those <code>#[derive(...)]</code> lines in your file are actually doing.</p>
+</section>
+
+<!-- ==================================================== 29 traits ====== -->
+<section class="slide">
+  <span class="eyebrow">Part 5 · Traits</span>
+  <h2>Traits: shared behaviour without a base class</h2>
+  <p class="lede">A trait is a set of methods a type promises to provide. Closest to a Java or C# interface — but a type can gain one <em>after the fact</em>, without touching its definition.</p>
+  <div class="tablewrap">
+  <table>
+    <tr><th>Language</th><th>Mechanism</th><th>Checked</th></tr>
+    <tr><td>Python</td><td>Duck typing — call it and hope</td><td>At runtime, on the failing line</td></tr>
+    <tr><td>Java / C#</td><td><code>implements</code>, declared on the class</td><td>Compile time, but only where you own the class</td></tr>
+    <tr><td>Rust</td><td><code>impl Trait for Type</code>, declared anywhere</td><td>Compile time, and works for types you did not write</td></tr>
+  </table>
+  </div>
+  <div class="diag">
+    <p><span class="d-tag tag-note">note:</span> there is no inheritance in Rust. No base classes, no <code>super()</code>, no overriding. Shared behaviour is always a trait.</p>
+    <p><span class="d-tag tag-help">help:</span> you already used one. <code>rand::RngExt</code> is a trait, and line 13's <code>use rand::RngExt;</code> is what makes <code>rng.random_range(..)</code> exist at line 216. Import the trait or the method is invisible — a common early stumbling block.</p>
+  </div>
+</section>
+
+<!-- ==================================================== 30 derive ====== -->
+<section class="slide">
+  <span class="eyebrow">Part 5 · Traits</span>
+  <h2><code>#[derive(...)]</code> is the compiler writing trait impls for you</h2>
+  <figure class="code">
+    <figcaption><span>main.rs:43</span><span>six traits, zero hand-written code</span></figcaption>
+<pre><code class="rust">#[derive(Component, Clone, Copy, PartialEq, Eq, Debug)]
+struct Pos { x: i32, y: i32 }</code></pre>
+  </figure>
+  <div class="tablewrap">
+  <table>
+    <tr><th>Derive</th><th>What it grants</th><th>Line in your file that needs it</th></tr>
+    <tr><td><code>Clone</code></td><td>explicit duplication via <code>.clone()</code></td><td>prerequisite for <code>Copy</code></td></tr>
+    <tr><td><code>Copy</code></td><td>assignment duplicates instead of moving</td><td>309 — <code>let head = old[0];</code></td></tr>
+    <tr><td><code>PartialEq</code></td><td>the <code>==</code> operator</td><td>335 — <code>**p == new_head</code></td></tr>
+    <tr><td><code>Eq</code></td><td>marks equality as total (no <code>NaN</code> weirdness)</td><td>322 — <code>.contains(&amp;new_head)</code></td></tr>
+    <tr><td><code>Debug</code></td><td>printing with <code>{:?}</code> for diagnostics</td><td>not used yet — free insurance</td></tr>
+    <tr><td><code>Component</code></td><td>Bevy's marker: this may attach to an entity</td><td>engine-specific, not language</td></tr>
+  </table>
+  </div>
+  <div class="diag">
+    <p><span class="d-tag tag-warn">warning:</span> without <code>PartialEq</code>, line 335 does not compile. <code>==</code> is not built in for your own types — it is a trait you must opt into.</p>
+  </div>
+</section>
+
+<!-- ==================================================== 31 generics ==== -->
+<section class="slide">
+  <span class="eyebrow">Part 5 · Traits</span>
+  <h2>Generics: one definition, many types, no runtime cost</h2>
+  <figure class="code">
+    <figcaption><span>generic types already in your file</span></figcaption>
+<pre><code class="rust">Vec&lt;Pos&gt;                            // line 298
+Option&lt;Dir&gt;                          // line 255, inferred
+Query&lt;&amp;mut Pos, Without&lt;Food&gt;&gt;      // line 287
+Res&lt;ButtonInput&lt;KeyCode&gt;&gt;           // line 254</code></pre>
+  </figure>
+  <div class="diag">
+    <p><span class="d-tag tag-note">note:</span> the angle brackets read exactly like Python's <code>list[int]</code> type hints — except here they are enforced, not advisory.</p>
+    <p><span class="d-tag tag-note">note:</span> Rust compiles a separate specialised copy of the code for each concrete type. A <code>Vec&lt;Pos&gt;</code> is as fast as a hand-written array of <code>Pos</code> — no boxing, no indirection.</p>
+    <p><span class="d-tag tag-warn">warning:</span> that specialisation is one reason your build took 21 minutes. Generic code is compiled once per type it is used with, and Bevy is generic almost everywhere.</p>
+  </div>
+</section>
+
+<!-- ==================================================== DIV 6 ========== -->
+<section class="slide divider">
+  <span class="partno">06</span>
+  <h2>Iterators and closures</h2>
+  <p>The most Python-like corner of Rust — comprehensions become method chains — with one twist that will confuse you exactly once.</p>
+</section>
+
+<!-- ==================================================== 32 iterators === -->
+<section class="slide">
+  <span class="eyebrow">Part 6 · Iterators</span>
+  <h2>Iterators are lazy, and do nothing until collected</h2>
+  <figure class="code">
+    <figcaption><span>main.rs:206–209</span><span>every free cell on the board</span></figcaption>
+<pre><code class="rust">let free: Vec&lt;Pos&gt; = (0..GRID_W)
+    .flat_map(|x| (0..GRID_H).map(move |y| Pos { x, y }))
+    .filter(|p| !occupied.contains(p))
+    .collect();</code></pre>
+  </figure>
+  <div class="compare">
+    <div><h4>Python</h4>
+      <figure class="code"><pre><code class="python">free = [
+    Pos(x, y)
+    for x in range(GRID_W)
+    for y in range(GRID_H)
+    if Pos(x, y) not in occupied
+]</code></pre></figure>
+    </div>
+    <div><h4>Rust</h4>
+      <figure class="code"><pre><code class="rust">let free: Vec&lt;Pos&gt; = (0..GRID_W)
+    .flat_map(|x| ...)
+    .filter(|p| ...)
+    .collect();</code></pre></figure>
+    </div>
+  </div>
+  <div class="diag">
+    <p><span class="d-tag tag-note">note:</span> <code>flat_map</code> is the second <code>for</code>; <code>filter</code> is the <code>if</code>; <code>collect</code> is the surrounding brackets.</p>
+    <p><span class="d-tag tag-note">note:</span> nothing runs until <code>.collect()</code>. Everything before it just describes the pipeline — like a generator, not a list.</p>
+    <p><span class="d-tag tag-help">help:</span> <code>collect()</code> needs to know the target type, which is why <code>let free: Vec&lt;Pos&gt;</code> is annotated. That annotation is not decoration — remove it and compilation fails.</p>
+  </div>
+</section>
+
+<!-- ==================================================== 33 closures ==== -->
+<section class="slide">
+  <span class="eyebrow">Part 6 · Iterators</span>
+  <h2>Closures, and the <code>move</code> that looks like a typo</h2>
+  <figure class="code">
+    <figcaption><span>main.rs:207</span><span>the most confusing line in the file</span></figcaption>
+<pre><code class="rust">.flat_map(|x| (0..GRID_H).map(move |y| Pos { x, y }))</code></pre>
+  </figure>
+  <div class="diag">
+    <p><span class="d-tag tag-note">note:</span> <code>|x| ...</code> is a closure — Python's <code>lambda x: ...</code>. Pipes instead of the keyword; the body may be a whole block.</p>
+    <p><span class="d-tag tag-note">note:</span> the inner closure uses <code>x</code>, which belongs to the <em>outer</em> closure. By default it would borrow <code>x</code> — but the inner iterator outlives the outer call, so that borrow would dangle.</p>
+    <p><span class="d-tag tag-help">help:</span> <code>move</code> forces the closure to take ownership of <code>x</code> instead of borrowing it. Free of cost, because <code>x</code> is an <code>i32</code> and therefore <code>Copy</code>.</p>
+    <p><span class="d-tag tag-warn">warning:</span> delete <code>move</code> and you get <code>error[E0373]: closure may outlive the current function</code>. Every idea from Part 3 converges on this one word.</p>
+  </div>
+</section>
+
+<!-- ==================================================== 34 adapters ==== -->
+<section class="slide">
+  <span class="eyebrow">Part 6 · Iterators</span>
+  <h2>The adapters your file actually uses</h2>
+  <div class="tablewrap">
+  <table>
+    <tr><th>Adapter</th><th>Python equivalent</th><th>In your file</th></tr>
+    <tr><td><code>.map(f)</code></td><td><code>map(f, xs)</code></td><td>207 — build a <code>Pos</code> per <code>y</code></td></tr>
+    <tr><td><code>.filter(p)</code></td><td><code>filter(p, xs)</code></td><td>208 — drop occupied cells</td></tr>
+    <tr><td><code>.filter_map(f)</code></td><td>map + drop <code>None</code>s</td><td>301 — keep only entities that still exist</td></tr>
+    <tr><td><code>.find(p)</code></td><td><code>next(x for x in xs if p(x))</code></td><td>335 — is there food on the new head cell?</td></tr>
+    <tr><td><code>.enumerate()</code></td><td><code>enumerate(xs)</code></td><td>328 — index each segment while walking the body</td></tr>
+    <tr><td><code>.collect()</code></td><td><code>list(...)</code></td><td>209, 302</td></tr>
+  </table>
+  </div>
+  <figure class="code">
+    <figcaption><span>main.rs:328–333</span><span>enumerate, driving the whole movement step</span></figcaption>
+<pre><code class="rust">for (i, e) in snake.body.iter().enumerate() {
+    let target = if i == 0 { new_head } else { old[i - 1] };
+    if let Ok(mut p) = positions.get_mut(*e) {
+        *p = target;
+    }
+}</code></pre>
+  </figure>
+  <div class="diag">
+    <p><span class="d-tag tag-note">note:</span> five ideas in five lines — <code>enumerate</code>, tuple destructuring, <code>if</code> as an expression, <code>if let</code> on a <code>Result</code>, and <code>*p</code> writing through a mutable reference. You can now read every one.</p>
+  </div>
+</section>
+
+<!-- ==================================================== 35 checkpoint == -->
+<section class="slide">
+  <span class="eyebrow">Part 6 · Checkpoint</span>
+  <h2>Checkpoint — what breaks without <code>move</code>?</h2>
+  <figure class="code">
+    <figcaption><span>main.rs:207, with move removed</span></figcaption>
+<pre><code class="rust">.flat_map(|x| (0..GRID_H).map(|y| Pos { x, y }))</code></pre>
+  </figure>
+  <details class="check">
+    <summary>Why does the compiler reject this, in terms of Part 3?</summary>
+    <div class="check-body">
+      <p>Without <code>move</code>, the inner closure <em>borrows</em> <code>x</code> from the outer closure's stack frame.</p>
+      <p>But <code>flat_map</code> does not consume the inner iterator immediately — it returns it, to be drained later, after the outer closure has already returned and its frame is gone. The borrow would outlive what it points at.</p>
+      <p>That is a use-after-free, and in C++ it would compile silently and corrupt memory at random. Rust rejects it: <code>error[E0373]: closure may outlive the current function, but it borrows `x`</code>.</p>
+      <p><code>move</code> copies <code>x</code> into the closure so it owns its own copy — and since <code>x</code> is an <code>i32</code>, that copy is free.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ==================================================== DIV 7 ========== -->
+<section class="slide divider">
+  <span class="partno">07</span>
+  <h2>Crates, imports and macros</h2>
+  <p>The plumbing around the language: where code comes from, and why some calls end in an exclamation mark.</p>
+</section>
+
+<!-- ==================================================== 36 use ========= -->
+<section class="slide">
+  <span class="eyebrow">Part 7 · Plumbing</span>
+  <h2><code>use</code>, crates and the prelude</h2>
+  <figure class="code">
+    <figcaption><span>main.rs:9–13</span><span>the whole import section</span></figcaption>
+<pre><code class="rust">use bevy::prelude::*;
+use bevy::window::WindowResolution;
+
+use chacha20::ChaCha8Rng;
+use rand::RngExt;</code></pre>
+  </figure>
+  <div class="diag">
+    <p><span class="d-tag tag-note">note:</span> a <em>crate</em> is Rust's package — <code>bevy</code>, <code>rand</code> and <code>chacha20</code> are three separate crates, declared in <code>Cargo.toml</code> and fetched from crates.io.</p>
+    <p><span class="d-tag tag-note">note:</span> <code>::</code> separates path segments, where Python uses <code>.</code>. A <em>prelude</em> is a module that re-exports the things you almost always want, so one glob import replaces fifty lines.</p>
+    <p><span class="d-tag tag-help">help:</span> <code>use rand::RngExt;</code> imports no function at all — it imports a <em>trait</em>, which is what makes <code>.random_range()</code> callable at line 216. If a method "doesn't exist" but the docs say it should, a missing trait import is usually why.</p>
+    <p><span class="d-tag tag-warn">warning:</span> glob imports (<code>::*</code>) are frowned on generally, but engine preludes are the accepted exception.</p>
+  </div>
+</section>
+
+<!-- ==================================================== 37 macros ====== -->
+<section class="slide">
+  <span class="eyebrow">Part 7 · Plumbing</span>
+  <h2>Macros: the <code>!</code> means code was generated</h2>
+  <p class="lede">A macro runs at compile time and writes source code. That is why it can do things no function could.</p>
+  <div class="tablewrap">
+  <table>
+    <tr><th>Macro</th><th>In your file</th><th>Why it cannot be a function</th></tr>
+    <tr><td><code>vec![...]</code></td><td>234, 347</td><td>Takes any number of arguments of any type</td></tr>
+    <tr><td><code>format!("...")</code></td><td>384</td><td>Type-checks the placeholders against the arguments at compile time</td></tr>
+    <tr><td><code>matches!(v, pat)</code></td><td>74</td><td>Takes a <em>pattern</em> — not a value — as an argument</td></tr>
+    <tr><td><code>children![...]</code></td><td>177, 382</td><td>Builds a heterogeneous list of component bundles</td></tr>
+    <tr><td><code>#[derive(...)]</code></td><td>35, 43, 84...</td><td>An attribute macro — writes whole trait impls before compilation</td></tr>
+  </table>
+  </div>
+  <div class="diag">
+    <p><span class="d-tag tag-note">note:</span> <code>format!</code> is Python's f-string. <code>Text::new(format!("Game Over — score {}", score.0))</code> at line 384 is <code>f"Game Over — score {score}"</code>.</p>
+    <p><span class="d-tag tag-help">help:</span> you will use macros constantly and write them almost never. Reading <code>!</code> as "this expands into more code" is enough for a long time.</p>
+  </div>
+</section>
+
+<!-- ==================================================== DIV 8 ========== -->
+<section class="slide divider">
+  <span class="partno">08</span>
+  <h2>Which parts are Rust, and which are Bevy</h2>
+  <p>Your file mixes the two on nearly every line. Telling them apart is what lets you carry this knowledge to any other Rust code.</p>
+</section>
+
+<!-- ==================================================== 38 split ======= -->
+<section class="slide">
+  <span class="eyebrow">Part 8 · Rust vs Bevy</span>
+  <h2>The same line, split down the middle</h2>
+  <figure class="code">
+    <figcaption><span>main.rs:287</span></figcaption>
+<pre><code class="rust">mut positions: Query&lt;&amp;mut Pos, Without&lt;Food&gt;&gt;,</code></pre>
+  </figure>
+  <div class="tablewrap">
+  <table>
+    <tr><th>Fragment</th><th>Rust or Bevy?</th><th>Transfers to other Rust code?</th></tr>
+    <tr><td><code>mut positions:</code></td><td>Rust — a mutable binding</td><td>Yes</td></tr>
+    <tr><td><code>Query&lt;...&gt;</code></td><td>Bevy — an ECS query type</td><td>No</td></tr>
+    <tr><td><code>&amp;mut Pos</code></td><td>Rust — a mutable borrow</td><td>Yes</td></tr>
+    <tr><td><code>Without&lt;Food&gt;</code></td><td>Bevy — a query filter</td><td>No, but the <em>reason</em> it exists is pure Rust</td></tr>
+  </table>
+  </div>
+  <div class="diag">
+    <p><span class="d-tag tag-help">help:</span> a fast rule — anything with a capitalised name imported from <code>bevy::prelude</code> is engine. Keywords, <code>&amp;</code>, <code>mut</code>, <code>Option</code>, <code>Result</code>, <code>Vec</code>, iterators and closures are language, and follow you everywhere.</p>
+  </div>
+</section>
+
+<!-- ==================================================== 39 systems ===== -->
+<section class="slide">
+  <span class="eyebrow">Part 8 · Rust vs Bevy</span>
+  <h2>Systems are ordinary functions — Bevy fills in the arguments</h2>
+  <figure class="code">
+    <figcaption><span>main.rs:403–410</span><span>a complete system</span></figcaption>
+<pre><code class="rust">fn restart_on_space(
+    keys: Res&lt;ButtonInput&lt;KeyCode&gt;&gt;,
+    mut next_state: ResMut&lt;NextState&lt;GameState&gt;&gt;,
+) {
+    if keys.just_pressed(KeyCode::Space) {
+        next_state.set(GameState::Playing);
+    }
+}</code></pre>
+  </figure>
+  <div class="diag">
+    <p><span class="d-tag tag-note">note:</span> nothing here is special syntax. It is a plain <code>fn</code>. Registering it at line 137 lets Bevy inspect the parameter <em>types</em> and supply matching values — dependency injection, driven by types instead of names.</p>
+    <p><span class="d-tag tag-note">note:</span> <code>Res&lt;T&gt;</code> is shared read access; <code>ResMut&lt;T&gt;</code> is exclusive write access. The same reader/writer rule from Part 3, applied to global state — which is how Bevy can safely run systems in parallel.</p>
+    <p><span class="d-tag tag-help">help:</span> this is why the B0001 panic was a <em>runtime</em> error. Bevy builds this access map as the app starts, long after the compiler has finished.</p>
+  </div>
+</section>
+
+<!-- ==================================================== 40 cheatsheet == -->
+<section class="slide">
+  <span class="eyebrow">Part 8 · Reference</span>
+  <h2>Python → Rust, on one page</h2>
+  <div class="tablewrap">
+  <table>
+    <tr><th>Python</th><th>Rust</th><th>Note</th></tr>
+    <tr><td><code>x = 5</code></td><td><code>let x = 5;</code></td><td>immutable; add <code>mut</code> to reassign</td></tr>
+    <tr><td><code>def f(a, b):</code></td><td><code>fn f(a: i32, b: f32) -&gt; T {</code></td><td>types mandatory at boundaries</td></tr>
+    <tr><td><code>return v</code></td><td><code>v</code> (no semicolon)</td><td>last expression is the value</td></tr>
+    <tr><td><code>None</code></td><td><code>Option&lt;T&gt;</code> / <code>None</code></td><td>only where the type allows it</td></tr>
+    <tr><td><code>try/except</code></td><td><code>Result&lt;T, E&gt;</code></td><td>failure is a return value</td></tr>
+    <tr><td><code>[f(x) for x in xs if p(x)]</code></td><td><code>xs.iter().filter(p).map(f).collect()</code></td><td>lazy until <code>collect</code></td></tr>
+    <tr><td><code>lambda x: x + 1</code></td><td><code>|x| x + 1</code></td><td><code>move</code> to capture by value</td></tr>
+    <tr><td><code>class C:</code></td><td><code>struct C</code> + <code>impl C</code></td><td>data and behaviour separate</td></tr>
+    <tr><td><code>Enum</code></td><td><code>enum</code></td><td>closed set; variants may hold data</td></tr>
+    <tr><td><code>isinstance</code> / duck typing</td><td>traits</td><td>checked at compile time</td></tr>
+    <tr><td><code>xs[:-1]</code></td><td><code>&amp;xs[..xs.len() - 1]</code></td><td>borrows; does not copy</td></tr>
+    <tr><td><code>f"{a} {b}"</code></td><td><code>format!("{} {}", a, b)</code></td><td>a macro, checked at compile time</td></tr>
+    <tr><td><code>import m</code></td><td><code>use m::...;</code></td><td>traits must be imported to use their methods</td></tr>
+  </table>
+  </div>
+</section>
+
+<!-- ==================================================== 41 next ======== -->
+<section class="slide">
+  <span class="eyebrow">Part 8 · Where to go next</span>
+  <h2>What to do with this</h2>
+  <p class="lede">You can now read every line of <code>main.rs</code>. The fastest way to convert that into fluency is to change it and let the compiler argue with you.</p>
+  <div class="rows">
+    <div>
+      <h3>Three edits worth trying, in order</h3>
+      <ul class="tight">
+        <li><strong>Change <code>TICK</code> at line 24.</strong> Trivial, but it confirms your edit-build-run loop is the promised ~15 seconds.</li>
+        <li><strong>Make the snake wrap around the walls</strong> instead of dying — modify the bounds check at line 315. Pure Part 1 and Part 2 work.</li>
+        <li><strong>Add a second food item.</strong> This forces you into ownership, borrowing and query conflicts all at once — and is where you will meet the borrow checker properly.</li>
+      </ul>
+    </div>
+    <div class="diag">
+      <p><span class="d-tag tag-help">help:</span> when the compiler rejects something, read the whole message including the <code>note:</code> and <code>help:</code> lines. Rust's diagnostics usually contain the fix verbatim — that is why this deck is styled after them.</p>
+      <p><span class="d-tag tag-note">note:</span> <code>cargo check</code> is your fast feedback loop, but as Part 3 showed, it cannot catch Bevy's runtime query conflicts. Always launch the game before believing it works.</p>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<nav class="chrome">
+  <button id="prev" type="button" aria-label="Previous slide">&larr; Prev</button>
+  <span id="counter">1 / 1</span>
+  <button id="next" type="button" aria-label="Next slide">Next &rarr;</button>
+  <button id="theme" type="button" aria-label="Toggle light or dark theme">Theme</button>
+  <button id="printtheme" type="button" aria-label="Choose the palette used when printing">PDF: light</button>
+  <span id="partlabel"></span>
+</nav>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------------------------------------------- syntax highlighting -- */
+  var RUST_KW = /^(fn|let|mut|const|struct|enum|impl|for|in|if|else|match|return|use|pub|self|Self|true|false|as|move|where|type|while|loop|break|continue|ref|dyn|crate|mod|static)$/;
+  var PY_KW = /^(def|class|return|if|elif|else|for|in|while|import|from|not|and|or|is|None|True|False|lambda|try|except|with|as|yield|pass)$/;
+
+  function esc(s) {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  /* Walk the matches manually and escape the gaps between them. Using
+     String.replace would leave unmatched text (`<`, `>`, `&`) raw, which turns
+     `Query<&mut Pos>` into broken markup. */
+  function highlight(src, re, classify) {
+    var out = "", last = 0, m;
+    re.lastIndex = 0;
+    while ((m = re.exec(src)) !== null) {
+      out += esc(src.slice(last, m.index));
+      out += classify(m);
+      last = m.index + m[0].length;
+      if (m[0].length === 0) { re.lastIndex++; }
+    }
+    return out + esc(src.slice(last));
+  }
+
+  var rustRe = /(\/\/[^\n]*)|("(?:[^"\\]|\\.)*")|(#\[[^\]]*\])|([A-Za-z_][A-Za-z0-9_]*!)|(\b\d[\d_]*(?:\.\d+)?\b)|([A-Za-z_][A-Za-z0-9_]*)/g;
+
+  function hlRust(src) {
+    return highlight(src, rustRe, function (m) {
+      if (m[1] !== undefined) return '<span class="t-com">' + esc(m[1]) + "</span>";
+      if (m[2] !== undefined) return '<span class="t-str">' + esc(m[2]) + "</span>";
+      if (m[3] !== undefined) return '<span class="t-attr">' + esc(m[3]) + "</span>";
+      if (m[4] !== undefined) return '<span class="t-mac">' + esc(m[4]) + "</span>";
+      if (m[5] !== undefined) return '<span class="t-num">' + esc(m[5]) + "</span>";
+      var w = m[6];
+      if (w !== undefined) {
+        if (RUST_KW.test(w)) return '<span class="t-kw">' + esc(w) + "</span>";
+        if (/^[A-Z]/.test(w)) return '<span class="t-ty">' + esc(w) + "</span>";
+      }
+      return esc(m[0]);
+    });
+  }
+
+  var pyRe = /(#[^\n]*)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\b\d[\d_]*(?:\.\d+)?\b)|([A-Za-z_][A-Za-z0-9_]*)/g;
+
+  function hlPy(src) {
+    return highlight(src, pyRe, function (m) {
+      if (m[1] !== undefined) return '<span class="t-com">' + esc(m[1]) + "</span>";
+      if (m[2] !== undefined) return '<span class="t-str">' + esc(m[2]) + "</span>";
+      if (m[3] !== undefined) return '<span class="t-num">' + esc(m[3]) + "</span>";
+      if (m[4] !== undefined && PY_KW.test(m[4])) return '<span class="t-kw">' + esc(m[4]) + "</span>";
+      return esc(m[0]);
+    });
+  }
+
+  var blocks = document.querySelectorAll("code.rust, code.python");
+  for (var b = 0; b < blocks.length; b++) {
+    var el = blocks[b];
+    var raw = el.textContent;
+    el.innerHTML = el.classList.contains("rust") ? hlRust(raw) : hlPy(raw);
+  }
+
+  /* ------------------------------------------------------ navigation --- */
+  var slides = Array.prototype.slice.call(document.querySelectorAll(".slide"));
+  var counter = document.getElementById("counter");
+  var partlabel = document.getElementById("partlabel");
+  var progress = document.getElementById("progress");
+  var idx = 0;
+
+  var deckcount = document.getElementById("deckcount");
+  if (deckcount) { deckcount.textContent = "A Rust course in " + slides.length + " slides"; }
+
+  function labelFor(slide) {
+    var eb = slide.querySelector(".eyebrow");
+    if (eb) return eb.textContent;
+    var h = slide.querySelector("h2");
+    return h ? h.textContent : "";
+  }
+
+  function show(n, push) {
+    idx = Math.max(0, Math.min(slides.length - 1, n));
+    for (var i = 0; i < slides.length; i++) {
+      slides[i].classList.toggle("is-active", i === idx);
+    }
+    counter.textContent = idx + 1 + " / " + slides.length;
+    partlabel.textContent = labelFor(slides[idx]);
+    progress.style.width = ((idx + 1) / slides.length) * 100 + "%";
+    window.scrollTo(0, 0);
+    if (push !== false) {
+      history.replaceState(null, "", "#" + (idx + 1));
+    }
+  }
+
+  document.getElementById("prev").addEventListener("click", function () { show(idx - 1); });
+  document.getElementById("next").addEventListener("click", function () { show(idx + 1); });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+    switch (e.key) {
+      case "ArrowRight": case "PageDown": show(idx + 1); e.preventDefault(); break;
+      case " ": if (e.target.tagName !== "SUMMARY" && e.target.tagName !== "BUTTON") { show(idx + 1); e.preventDefault(); } break;
+      case "ArrowLeft": case "PageUp": show(idx - 1); e.preventDefault(); break;
+      case "Home": show(0); e.preventDefault(); break;
+      case "End": show(slides.length - 1); e.preventDefault(); break;
+    }
+  });
+
+  /* ------------------------------------------------------------ theme -- */
+  var root = document.documentElement;
+
+  /* Only restore a saved choice when nothing has already set the theme.
+     When this page is hosted, the viewer's own toggle stamps `data-theme`,
+     and it must win rather than be fought on load. */
+  try {
+    var saved = localStorage.getItem("rustdeck-theme");
+    if (saved && !root.getAttribute("data-theme")) { root.setAttribute("data-theme", saved); }
+  } catch (e) { /* file:// with storage blocked — ignore */ }
+
+  document.getElementById("theme").addEventListener("click", function () {
+    var isDark = root.getAttribute("data-theme")
+      ? root.getAttribute("data-theme") === "dark"
+      : window.matchMedia("(prefers-color-scheme: dark)").matches;
+    var next = isDark ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem("rustdeck-theme", next); } catch (e) {}
+  });
+
+  /* ------------------------------------------------- print palette ----- */
+  var printBtn = document.getElementById("printtheme");
+
+  function syncPrintLabel() {
+    printBtn.textContent = root.getAttribute("data-print") === "dark" ? "PDF: dark" : "PDF: light";
+  }
+
+  try {
+    if (localStorage.getItem("rustdeck-print") === "dark") { root.setAttribute("data-print", "dark"); }
+  } catch (e) {}
+  syncPrintLabel();
+
+  printBtn.addEventListener("click", function () {
+    if (root.getAttribute("data-print") === "dark") {
+      root.removeAttribute("data-print");
+    } else {
+      root.setAttribute("data-print", "dark");
+    }
+    syncPrintLabel();
+    try { localStorage.setItem("rustdeck-print", root.getAttribute("data-print") || "light"); } catch (e) {}
+  });
+
+  /* --------------------------------------------------------- printing -- */
+  var openedForPrint = [];
+  window.addEventListener("beforeprint", function () {
+    openedForPrint = [];
+    var ds = document.querySelectorAll("details");
+    for (var i = 0; i < ds.length; i++) {
+      if (!ds[i].open) { ds[i].open = true; openedForPrint.push(ds[i]); }
+    }
+  });
+  window.addEventListener("afterprint", function () {
+    for (var i = 0; i < openedForPrint.length; i++) { openedForPrint[i].open = false; }
+    openedForPrint = [];
+  });
+
+  var start = parseInt((location.hash || "#1").slice(1), 10);
+  show(isNaN(start) ? 0 : start - 1, false);
+})();
+</script>
+
+</body>
+</html>

@@ -16,7 +16,13 @@ chacha20 = { workspace = true }
 # Links Bevy as a shared library so rebuilds of *our* code skip relinking the
 # whole engine. Deliberately opt-in — release builds stay statically linked,
 # because a dynamically linked binary needs bevy_dylib shipped alongside it.
-dev = ["bevy/dynamic_linking"]
+#
+# Kept byte-identical to the other workspace members' `dev` feature. Cargo
+# resolves features over the set of packages being built, so if members disagree
+# they stop sharing compiled artifacts and each pays a full Bevy rebuild.
+# bevy/dev adds named systems/components in ECS errors (the diagnostic that was
+# missing when this game panicked with B0001) plus asset hot-reloading.
+dev = ["bevy/dynamic_linking", "bevy/dev", "bevy/track_location"]
 
 # NOTE: no [profile.*] here — cargo ignores profiles in workspace members.
 # They live in ../Cargo.toml.
