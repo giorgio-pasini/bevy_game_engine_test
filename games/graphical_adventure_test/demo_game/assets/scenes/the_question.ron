@@ -1,0 +1,15 @@
+(
+  steps: [
+    Add(flag: "trust", delta: 2),
+
+    Say(speaker: "mira", text: r#"What happens to you if nobody ever does?"#),
+
+    Narrate(r#"For a long moment the only sound is wind moving through him, the way it moves through a broken window."#),
+
+    Say(speaker: "golem", text: r#"I keep counting. That is all. The counting does not stop when the turning does."#),
+    Say(speaker: "mira", text: r#"That's a horrible answer."#),
+    Say(speaker: "golem", text: r#"You asked a horrible question. I thought it deserved the truth."#),
+
+    JumpTo("after_question"),
+  ],
+)

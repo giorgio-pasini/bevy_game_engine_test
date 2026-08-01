@@ -21,8 +21,24 @@ const Z_CHARACTER: f32 = 1.0;
 #[derive(Component)]
 pub struct BackgroundSprite;
 
+/// A character on stage. Carries the cast id so the speaker cue can tell which
+/// sprite is talking — the link that did not exist when `Show` took a path.
 #[derive(Component)]
-pub struct CharacterSprite(pub Slot);
+pub struct CharacterSprite {
+    pub slot: Slot,
+    pub id: String,
+}
+
+/// Height a character occupies, in design units. Width follows from the image's
+/// real aspect ratio, so portrait and square art both render undistorted.
+const CHARACTER_HEIGHT: f32 = DESIGN_H * 0.82;
+
+/// How strongly listeners are dimmed, and how far the speaker rises.
+const DIM: f32 = 0.45;
+const SPEAKER_RISE: f32 = 26.0;
+const SPEAKER_SCALE: f32 = 1.04;
+/// Units per second for the eased transition.
+const CUE_SPEED: f32 = 7.0;
 
 #[derive(Component)]
 pub struct SpeakerText;
@@ -225,6 +241,7 @@ pub fn sync_background(
 pub fn sync_characters(
     mut commands: Commands,
     stage: Res<Stage>,
+    cast: Res<Cast>,
     mut applied: ResMut<AppliedStage>,
     assets: Res<AssetServer>,
     existing: Query<(Entity, &CharacterSprite)>,
@@ -235,25 +252,93 @@ pub fn sync_characters(
     for (e, _) in &existing {
         commands.entity(e).despawn();
     }
-    for (slot, path) in &stage.characters {
-        let x = match slot {
-            Slot::Left => -DESIGN_W * 0.27,
-            Slot::Centre => 0.0,
-            Slot::Right => DESIGN_W * 0.27,
+    for (slot, id) in &stage.characters {
+        let Some(path) = cast.image_of(id) else {
+            // build.rs guarantees this cannot happen in a built game.
+            warn!("character `{id}` is not in the cast");
+            continue;
         };
-        // Sits above the dialogue box rather than behind it.
-        let size = DESIGN_H * 0.86;
+        let x = match slot {
+            Slot::Left => -DESIGN_W * 0.26,
+            Slot::Centre => 0.0,
+            Slot::Right => DESIGN_W * 0.26,
+        };
         commands.spawn((
             Sprite {
-                image: assets.load(path.clone()),
-                custom_size: Some(Vec2::splat(size)),
+                image: assets.load(path.to_string()),
+                // Left unset here: `fit_characters` sets it once the texture's
+                // real dimensions are known, so art of any aspect ratio renders
+                // undistorted.
                 ..default()
             },
             Transform::from_xyz(x, BOX_HEIGHT * 0.5, Z_CHARACTER),
-            CharacterSprite(*slot),
+            CharacterSprite {
+                slot: *slot,
+                id: id.clone(),
+            },
         ));
     }
     applied.characters = stage.characters.clone();
+}
+
+/// Sizes each character to a fixed height, preserving the image's aspect ratio.
+///
+/// Deriving this from the loaded texture rather than hand-authoring it means
+/// replacing art of a different shape needs no code or data change. Runs until
+/// the texture is available, then leaves the sprite alone.
+pub fn fit_characters(
+    images: Res<Assets<Image>>,
+    mut sprites: Query<&mut Sprite, With<CharacterSprite>>,
+) {
+    for mut sprite in &mut sprites {
+        if sprite.custom_size.is_some() {
+            continue;
+        }
+        let Some(image) = images.get(&sprite.image) else {
+            continue; // still loading
+        };
+        let size = image.size();
+        if size.y == 0 {
+            continue;
+        }
+        let aspect = size.x as f32 / size.y as f32;
+        sprite.custom_size = Some(Vec2::new(CHARACTER_HEIGHT * aspect, CHARACTER_HEIGHT));
+    }
+}
+
+/// Dims listeners; brightens, raises and slightly enlarges the speaker.
+///
+/// Eased rather than snapped, so it reads as attention shifting rather than a
+/// flicker. This is the only system that writes character tint or scale.
+pub fn speaker_cue(
+    time: Res<Time>,
+    line: Res<CurrentLine>,
+    mut sprites: Query<(&CharacterSprite, &mut Sprite, &mut Transform)>,
+) {
+    let t = (time.delta_secs() * CUE_SPEED).clamp(0.0, 1.0);
+
+    for (character, mut sprite, mut transform) in &mut sprites {
+        let speaking = line.speaker.as_deref() == Some(character.id.as_str());
+
+        // With nobody speaking (narration), everyone sits at full brightness so
+        // the scene does not look uniformly greyed out.
+        let anybody_speaking = line.speaker.is_some();
+        let target_tint = if speaking || !anybody_speaking { 1.0 } else { DIM };
+        let target_rise = if speaking { SPEAKER_RISE } else { 0.0 };
+        let target_scale = if speaking { SPEAKER_SCALE } else { 1.0 };
+
+        let current = sprite.color.to_linear().red;
+        let tint = current + (target_tint - current) * t;
+        sprite.color = Color::linear_rgb(tint, tint, tint);
+
+        let base_y = BOX_HEIGHT * 0.5;
+        let y = transform.translation.y;
+        transform.translation.y = y + ((base_y + target_rise) - y) * t;
+
+        let s = transform.scale.x;
+        let ns = s + (target_scale - s) * t;
+        transform.scale = Vec3::new(ns, ns, 1.0);
+    }
 }
 
 pub fn sync_music(
@@ -307,13 +392,19 @@ pub fn reveal_text(
 
 pub fn draw_dialogue(
     line: Res<CurrentLine>,
+    cast: Res<Cast>,
     mode: Res<State<PlayMode>>,
     mut speaker: Query<&mut Text, (With<SpeakerText>, Without<BodyText>, Without<ContinueHint>)>,
     mut body: Query<&mut Text, (With<BodyText>, Without<SpeakerText>, Without<ContinueHint>)>,
     mut hint: Query<&mut Text, (With<ContinueHint>, Without<SpeakerText>, Without<BodyText>)>,
 ) {
     if let Ok(mut t) = speaker.single_mut() {
-        t.0 = line.speaker.clone().unwrap_or_default();
+        // `line.speaker` is a cast id; the box shows the display name.
+        t.0 = line
+            .speaker
+            .as_deref()
+            .map(|id| cast.name_of(id).to_string())
+            .unwrap_or_default();
     }
     if let Ok(mut t) = body.single_mut() {
         t.0 = line.visible();

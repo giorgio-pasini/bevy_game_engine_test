@@ -1,0 +1,14 @@
+(
+  steps: [
+    Hide(slot: Right),
+
+    Narrate(r#"He carries her over the peaks by morning, exactly as promised."#),
+
+    // Flags set several scenes ago change how this lands.
+    JumpIf(condition: IsSet("carries_name"), target: "ending_carried_name"),
+
+    Narrate(r#"Neither of them says anything about the winters. Below the pass the map starts agreeing with the mountain again, which Mira decides not to mention."#),
+
+    End,
+  ],
+)

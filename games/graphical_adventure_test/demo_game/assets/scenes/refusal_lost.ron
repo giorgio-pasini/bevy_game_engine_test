@@ -1,0 +1,8 @@
+(
+  steps: [
+    Say(speaker: "golem", text: r#"Go, then. You said you were lost. Follow the water down — it is less honest than you are, but it knows the way."#),
+    Say(speaker: "mira", text: r#"...Thank you."#),
+
+    JumpTo("ending_walked"),
+  ],
+)

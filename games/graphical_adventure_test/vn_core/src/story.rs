@@ -46,6 +46,8 @@ pub enum Slot {
 pub struct Choice<S> {
     pub text: String,
     pub target: S,
+    /// `None` means always offered.
+    pub condition: Option<Condition>,
 }
 
 /// A choice as written in a scene file, before its target is resolved to a
@@ -54,25 +56,105 @@ pub struct Choice<S> {
 pub struct RawChoice {
     pub text: String,
     pub target: String,
+    #[serde(default)]
+    pub condition: Option<Condition>,
+}
+
+/// A member of the cast: who a character id refers to.
+#[derive(Clone, Deserialize)]
+pub struct CastMember {
+    /// Shown in the dialogue box.
+    pub name: String,
+    pub image: String,
+}
+
+/// Character id -> who they are. Loaded from `cast.ron`; `build.rs` guarantees
+/// every id referenced by a scene is present here.
+#[derive(Resource, Clone, Default, Deserialize)]
+pub struct Cast(pub BTreeMap<String, CastMember>);
+
+impl Cast {
+    /// Falls back to the raw id when unknown — which `build.rs` prevents, but
+    /// showing `golem` beats showing nothing if it ever happens.
+    ///
+    /// The explicit lifetime is required: the result borrows from either `self`
+    /// or `id`, and elision would tie it to `self` alone.
+    pub fn name_of<'a>(&'a self, id: &'a str) -> &'a str {
+        self.0.get(id).map(|m| m.name.as_str()).unwrap_or(id)
+    }
+
+    pub fn image_of(&self, id: &str) -> Option<&str> {
+        self.0.get(id).map(|m| m.image.as_str())
+    }
+}
+
+/// Guards on choices and jumps.
+///
+/// Deliberately a small closed set — flags and counters cover essentially every
+/// visual novel, and an expression language is the classic over-engineering
+/// trap. Extending it means adding a variant, which the compiler then demands
+/// be handled everywhere.
+#[derive(Clone, Deserialize)]
+pub enum Condition {
+    IsSet(String),
+    IsNotSet(String),
+    AtLeast(String, i32),
+    All(Vec<Condition>),
+    Any(Vec<Condition>),
+}
+
+impl Condition {
+    pub fn holds(&self, flags: &BTreeMap<String, i32>) -> bool {
+        let get = |k: &String| flags.get(k).copied().unwrap_or(0);
+        match self {
+            Condition::IsSet(k) => get(k) != 0,
+            Condition::IsNotSet(k) => get(k) == 0,
+            Condition::AtLeast(k, n) => get(k) >= *n,
+            Condition::All(cs) => cs.iter().all(|c| c.holds(flags)),
+            Condition::Any(cs) => cs.iter().any(|c| c.holds(flags)),
+        }
+    }
+
+    /// Every flag this condition reads. Used by `build.rs` to catch typos.
+    pub fn flags_read(&self, out: &mut Vec<String>) {
+        match self {
+            Condition::IsSet(k) | Condition::IsNotSet(k) | Condition::AtLeast(k, _) => {
+                out.push(k.clone())
+            }
+            Condition::All(cs) | Condition::Any(cs) => {
+                for c in cs {
+                    c.flags_read(out);
+                }
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
 pub enum Step<S> {
     /// Replace the background image.
     Background { image: String },
-    /// Place a character sprite at a slot.
-    Show { image: String, slot: Slot },
+    /// Place a character on stage. `character` is a cast id, not a path.
+    Show { character: String, slot: Slot },
     /// Clear a slot.
     Hide { slot: Slot },
     /// `None` stops the music.
     Music { track: Option<String> },
-    /// A character speaks. Blocking.
+    /// A character speaks. Blocking. `speaker` is a cast id.
     Say { speaker: String, text: String },
     /// Unattributed prose. Blocking.
     Narrate { text: String },
     /// Offer a branch. Blocking.
     Choices(Vec<Choice<S>>),
     JumpTo(S),
+    /// Jump only if the condition holds; otherwise fall through to the next step.
+    JumpIf { condition: Condition, target: S },
+    /// Set a flag to 1.
+    Set { flag: String },
+    /// Set a flag to 0.
+    Clear { flag: String },
+    /// Add to a counter.
+    Add { flag: String, delta: i32 },
     End,
 }
 
@@ -84,13 +166,17 @@ pub enum Step<S> {
 #[derive(Clone, Deserialize)]
 pub enum RawStep {
     Background(String),
-    Show { image: String, slot: Slot },
+    Show { character: String, slot: Slot },
     Hide { slot: Slot },
     Music(Option<String>),
     Say { speaker: String, text: String },
     Narrate(String),
     Choices(Vec<RawChoice>),
     JumpTo(String),
+    JumpIf { condition: Condition, target: String },
+    Set(String),
+    Clear(String),
+    Add { flag: String, delta: i32 },
     End,
 }
 
@@ -116,14 +202,22 @@ impl RawScene {
         for raw in self.steps {
             steps.push(match raw {
                 RawStep::Background(image) => Step::Background { image },
-                RawStep::Show { image, slot } => Step::Show { image, slot },
+                RawStep::Show { character, slot } => Step::Show { character, slot },
                 RawStep::Hide { slot } => Step::Hide { slot },
                 RawStep::Music(track) => Step::Music { track },
                 RawStep::Say { speaker, text } => Step::Say { speaker, text },
                 RawStep::Narrate(text) => Step::Narrate { text },
+                RawStep::Set(flag) => Step::Set { flag },
+                RawStep::Clear(flag) => Step::Clear { flag },
+                RawStep::Add { flag, delta } => Step::Add { flag, delta },
                 RawStep::JumpTo(name) => Step::JumpTo(
                     lookup(&name).ok_or_else(|| format!("unknown scene `{name}`"))?,
                 ),
+                RawStep::JumpIf { condition, target } => Step::JumpIf {
+                    condition,
+                    target: lookup(&target)
+                        .ok_or_else(|| format!("unknown scene `{target}`"))?,
+                },
                 RawStep::Choices(items) => {
                     let mut out = Vec::with_capacity(items.len());
                     for c in items {
@@ -131,6 +225,7 @@ impl RawScene {
                             text: c.text,
                             target: lookup(&c.target)
                                 .ok_or_else(|| format!("unknown scene `{}`", c.target))?,
+                            condition: c.condition,
                         });
                     }
                     Step::Choices(out)
@@ -176,6 +271,9 @@ pub struct StoryState<S: SceneKey> {
     pub scene: S,
     pub step: usize,
     pub current: Scene<S>,
+    /// Booleans are stored as 0/1 so flags and counters share one map — which
+    /// keeps this whole struct trivially serialisable for the save system.
+    pub flags: BTreeMap<String, i32>,
 }
 
 /// Derived presentation state. Rebuilt from the story, never authored directly.
@@ -255,6 +353,7 @@ pub fn reset<S: SceneKey>(
     state.scene = script.start;
     state.current = (script.scene_of)(script.start);
     state.step = 0;
+    state.flags.clear();
     *stage = Stage::default();
     *line = CurrentLine::default();
     choices.items.clear();
@@ -284,9 +383,30 @@ pub fn advance<S: SceneKey>(
                 stage.background = Some(image);
                 state.step += 1;
             }
-            Step::Show { image, slot } => {
-                stage.characters.insert(slot, image);
+            Step::Show { character, slot } => {
+                stage.characters.insert(slot, character);
                 state.step += 1;
+            }
+            Step::Set { flag } => {
+                state.flags.insert(flag, 1);
+                state.step += 1;
+            }
+            Step::Clear { flag } => {
+                state.flags.insert(flag, 0);
+                state.step += 1;
+            }
+            Step::Add { flag, delta } => {
+                *state.flags.entry(flag).or_insert(0) += delta;
+                state.step += 1;
+            }
+            Step::JumpIf { condition, target } => {
+                if condition.holds(&state.flags) {
+                    state.scene = target;
+                    state.current = (script.scene_of)(target);
+                    state.step = 0;
+                } else {
+                    state.step += 1;
+                }
             }
             Step::Hide { slot } => {
                 stage.characters.remove(&slot);
@@ -322,9 +442,17 @@ pub fn advance<S: SceneKey>(
                 return PlayMode::Revealing;
             }
             Step::Choices(items) => {
+                // Only offer options whose condition holds — but keep each
+                // option's ORIGINAL index, because `take_choice` indexes into
+                // the unfiltered list.
                 choices.items = items
                     .iter()
                     .enumerate()
+                    .filter(|(_, c)| {
+                        c.condition
+                            .as_ref()
+                            .is_none_or(|cond| cond.holds(&state.flags))
+                    })
                     .map(|(i, c)| (c.text.clone(), i))
                     .collect();
                 // Deliberately does NOT advance `step`: the branch is resolved
@@ -348,6 +476,15 @@ pub fn take_choice<S: SceneKey>(
     let Some(choice) = items.get(index) else {
         return false;
     };
+    // Re-check the guard: a button could otherwise outlive the state that made
+    // its option available.
+    if !choice
+        .condition
+        .as_ref()
+        .is_none_or(|c| c.holds(&state.flags))
+    {
+        return false;
+    }
     state.scene = choice.target;
     state.current = (script.scene_of)(choice.target);
     state.step = 0;

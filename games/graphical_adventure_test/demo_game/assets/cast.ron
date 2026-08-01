@@ -1,0 +1,16 @@
+// Who the characters are. Scenes refer to them by the key on the left, never
+// by image path — which is what lets the engine know who is speaking and light
+// them accordingly.
+//
+// build.rs checks every `Show(character:)` and `Say(speaker:)` against this
+// file, so a mistyped id fails the build.
+{
+  "mira": (
+    name: "Mira",
+    image: "characters/adventurer_character.png",
+  ),
+  "golem": (
+    name: "The Golden Golem",
+    image: "characters/golem.png",
+  ),
+}

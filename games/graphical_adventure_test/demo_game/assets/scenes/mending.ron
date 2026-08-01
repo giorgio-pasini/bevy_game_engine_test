@@ -1,0 +1,18 @@
+(
+  steps: [
+    Music(Some("music/calm.ogg")),
+
+    Narrate(r#"The bent wheel resists, complains, and finally gives. Something deep in the gold starts keeping time with her pulse."#),
+
+    Say(speaker: "golem", text: r#"Ah. Warm hands. I had forgotten the shape of that."#),
+
+    // Only if she introduced herself back at the start.
+    JumpIf(condition: IsNotSet("knows_name"), target: "ending_carried"),
+
+    Say(speaker: "golem", text: r#"Thank you, Mira."#),
+    Say(speaker: "mira", text: r#"You remembered."#),
+    Say(speaker: "golem", text: r#"I have had a great deal of practice at counting. A name is easier."#),
+
+    JumpTo("ending_carried"),
+  ],
+)

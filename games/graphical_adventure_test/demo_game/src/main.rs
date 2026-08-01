@@ -29,6 +29,7 @@ fn main() {
             locale: Locale {
                 resolve: scenes::text_en,
             },
+            cast: scenes::cast(),
         })
         .run();
 }

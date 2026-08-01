@@ -1,0 +1,10 @@
+(
+  steps: [
+    Hide(slot: Right),
+
+    Narrate(r#"The cloud closes over him as she passes. She walks."#),
+    Narrate(r#"The walking is long, and she is alone with the sound of her own gears — and, for rather longer than she expects, with the arithmetic of six hundred and eleven winters."#),
+
+    End,
+  ],
+)

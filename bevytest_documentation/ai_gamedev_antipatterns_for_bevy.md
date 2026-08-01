@@ -220,6 +220,70 @@ matching write.
 
 ---
 
+## Using `_ => {}` in code that must handle every variant
+
+**What it looks like:** a `match` over a content enum that only cares about a few
+variants, so the rest are swept up in a wildcard. Perfectly idiomatic Rust.
+
+**Why it bites:** a wildcard arm **opts out of exhaustiveness checking** — the
+one guarantee that makes enum-based content safe. Add a variant later and the
+code still compiles, silently ignoring it.
+
+**Evidence.** A `JumpIf` step was added to a visual novel. Two separate graph
+walkers — the reachability check in `build.rs`, and the equivalent test — both
+matched `JumpTo` and `Choices` and ended in `_ => {}`. Neither followed the new
+variant, so three scenes reachable only through `JumpIf` were reported
+unreachable.
+
+The build script found the first one. The second surfaced only when its test
+failed *after* the first was fixed — the identical bug, in a file whose entire
+job is catching mistakes.
+
+**Cost:** two false failures and a misleading diagnosis: the tool blamed the
+content when the tool itself was wrong.
+
+**Instead:** in any code that must observe every variant — validators, walkers,
+serialisers, dispatchers — list the variants explicitly, grouping the no-ops:
+
+```rust
+Step::Background { .. } | Step::Show { .. } | Step::End => {}
+```
+
+Verbose, and that verbosity is the point: the next variant will not compile
+until someone decides what it means here. Keep wildcards for code that genuinely
+does not care.
+
+---
+
+## Checking that an asset exists but not that it loads
+
+**What it looks like:** a validator confirms every referenced asset is present on
+disk, and is described as covering asset errors.
+
+**Why it bites:** existence is not loadability. An engine only decodes the
+formats it was compiled with, so a file in an unsupported format passes the
+check, ships, and fails at runtime with a decode error.
+
+**Evidence:** a `mountains.webp` background was added while Bevy's `webp` feature
+was off. The build script — written the previous day and described as thorough —
+passed it, because the file was unquestionably there. Only tracing the enabled
+features by hand caught it before it ran.
+
+**Instead:** validate the *extension against the formats actually enabled*.
+Because a build script cannot inspect another crate's feature flags, the list
+must be maintained by hand next to the manifest — worth the duplication, since
+the failure it prevents is otherwise invisible until runtime:
+
+```
+asset `backgrounds/test.tiff` has extension `.tiff`, which is not among the
+formats enabled for bevy in games/Cargo.toml. Enabled: ["png", "jpg", ...]
+```
+
+**The general lesson:** when you write a validator, ask what it *does not* check.
+This one was believed complete for a day.
+
+---
+
 ## Confusing compile-time with test-time validation
 
 **What it looks like:** "we'll move content into data files, and add a test that

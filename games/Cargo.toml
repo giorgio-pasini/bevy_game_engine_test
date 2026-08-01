@@ -59,7 +59,21 @@ bevy = { version = "0.19", default-features = false, features = [
   "3d",
   "ui",
   "audio",
+  # Image codecs. Only "png" and "hdr" come from the profiles (via common_api);
+  # everything else is opt-in, and a missing codec is a RUNTIME failure — the
+  # file loads as bytes and then fails to decode. build.rs checks asset
+  # extensions against this list, so keep the two in step.
+  #
+  # There is no image equivalent of `audio-all-formats`, so these are listed
+  # individually. Enabled generously on purpose: each addition costs a full
+  # ~20-minute engine rebuild, and this is the third time an unsupported format
+  # has interrupted work.
   "jpeg",
+  "webp",
+  "bmp",
+  "tga",
+  "qoi",
+  "gif",
   "mp3",
   "wav",
 ] }

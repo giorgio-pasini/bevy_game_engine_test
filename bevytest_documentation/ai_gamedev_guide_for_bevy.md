@@ -121,6 +121,32 @@ code referencing that content stays compile-checked too, and emit
 It is not a DSL — `serde` does the parsing — so it does not cross the
 over-engineering line that hand-writing a parser would.
 
+### Validate that assets *load*, not merely that they exist
+`[bevy]` `[tooling]` — **confirmed**, Bevy 0.19.0
+
+An engine decodes only the formats it was compiled with. A present-but-
+unsupported file passes an existence check and fails at runtime with a decode
+error, which is among the least obvious failures to diagnose.
+
+Check the extension against the formats actually enabled, and keep that list
+beside the manifest that enables them.
+
+> Bevy 0.19 groups codecs into opt-in features; only `png` and `hdr` arrive via
+> the default profiles. A `.webp` asset passed an existence-only validator that
+> had been described as thorough the previous day.
+
+### Spell out enum variants in code that must handle all of them
+`[rust]` `[ai-workflow]` — **confirmed**
+
+In validators, graph walkers, serialisers and dispatchers, list every variant and
+group the no-ops rather than writing `_ => {}`. A wildcard silently absorbs
+variants added later — discarding the exhaustiveness guarantee that is the main
+reason to model content as enums at all.
+
+> Two independent graph walkers in the same project both used a wildcard and
+> both silently skipped a newly added variant, producing false "unreachable
+> content" reports that blamed the content rather than the tool.
+
 ### Write validation tests for what the compiler cannot check
 `[rust]` `[ai-workflow]` — **measured**
 

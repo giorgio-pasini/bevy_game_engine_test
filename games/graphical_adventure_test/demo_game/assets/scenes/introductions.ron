@@ -1,0 +1,20 @@
+(
+  steps: [
+    Say(speaker: "golem", text: r#"Speak, then. Travellers used to give a name before they gave demands."#),
+
+    Choices([
+      (
+        text: r#""Mira. And I'm not demanding anything.""#,
+        target: "gave_name",
+      ),
+      (
+        text: r#"Say nothing, and study the gears in his chest."#,
+        target: "stayed_silent",
+      ),
+      (
+        text: r#""I'm lost. I'll admit that much.""#,
+        target: "admitted_lost",
+      ),
+    ]),
+  ],
+)

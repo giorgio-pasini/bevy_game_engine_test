@@ -1,0 +1,13 @@
+(
+  steps: [
+    Set("knows_name"),
+    Add(flag: "trust", delta: 2),
+
+    Say(speaker: "mira", text: r#"Mira. And I'm not demanding anything — I'd just like to know what I'm looking at."#),
+    Say(speaker: "golem", text: r#"Mira."#),
+    Narrate(r#"He says it slowly, the way you'd handle something you were afraid of dropping."#),
+    Say(speaker: "golem", text: r#"Good. A name is a thing that can be given back later."#),
+
+    JumpTo("the_offer"),
+  ],
+)

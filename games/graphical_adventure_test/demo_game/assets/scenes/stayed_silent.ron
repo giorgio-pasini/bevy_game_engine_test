@@ -1,0 +1,11 @@
+(
+  steps: [
+    Narrate(r#"You keep your mouth shut and your eyes on the machinery: a lattice of gold wheels, most of them still, one of them bent badly out of true."#),
+
+    Say(speaker: "golem", text: r#"Careful. Staring is its own kind of demand."#),
+    Say(speaker: "mira", text: r#"..."#),
+    Say(speaker: "golem", text: r#"As you like. Silence keeps well up here. Everything does."#),
+
+    JumpTo("the_offer"),
+  ],
+)

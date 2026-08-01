@@ -1,0 +1,16 @@
+(
+  steps: [
+    Set("carries_name"),
+    Music(Some("music/calm.ogg")),
+
+    Say(speaker: "golem", text: r#"You would carry it? It is heavy, and it is not a kind thing to know."#),
+    Say(speaker: "mira", text: r#"I've carried worse up this mountain. Try me."#),
+
+    Narrate(r#"He tells her. It takes some time, and it is not a word in any language she has met."#),
+
+    Say(speaker: "mira", text: r#"...That's it? That's the whole thing?"#),
+    Say(speaker: "golem", text: r#"That is the whole thing. Six hundred years, and it took eleven seconds to hand over."#),
+
+    JumpTo("mending"),
+  ],
+)

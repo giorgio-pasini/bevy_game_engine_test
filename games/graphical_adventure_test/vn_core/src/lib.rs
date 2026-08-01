@@ -25,6 +25,9 @@ use story::*;
 pub struct VnPlugin<S: SceneKey> {
     pub script: Script<S>,
     pub locale: Locale,
+    /// Character id -> display name and image. `build.rs` guarantees every id a
+    /// scene references is present.
+    pub cast: Cast,
 }
 
 impl<S: SceneKey> Plugin for VnPlugin<S> {
@@ -39,10 +42,12 @@ impl<S: SceneKey> Plugin for VnPlugin<S> {
         .insert_resource(Locale {
             resolve: self.locale.resolve,
         })
+        .insert_resource(self.cast.clone())
         .insert_resource(StoryState::<S> {
             scene: start,
             step: 0,
             current,
+            flags: Default::default(),
         })
         .init_resource::<Stage>()
         .init_resource::<AppliedStage>()
@@ -68,10 +73,15 @@ impl<S: SceneKey> Plugin for VnPlugin<S> {
                 letterbox::fit_letterbox,
                 sync_background,
                 sync_characters,
+                // Must follow sync_characters: it sizes what that just spawned,
+                // and speaker_cue then animates the sized sprites.
+                fit_characters,
+                speaker_cue,
                 sync_music,
                 highlight_choices,
                 handle_ui_buttons,
-            ),
+            )
+                .chain(),
         )
         // Story systems exist only while playing.
         .add_systems(

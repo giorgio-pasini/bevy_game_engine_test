@@ -260,6 +260,13 @@ pub fn scene(id: SceneId) -> Scene {
 the missing variant. The compiler becomes the to-do list, which is exactly the
 property that makes AI-generated content safe to accept.
 
+> **IMPLEMENTED 2026-08-02.** Conditions exist as described below, plus
+> `Set`/`Clear`/`Add` steps and `JumpIf`. Choices take an optional condition.
+> `build.rs` cross-checks flags written against flags read, and requires at least
+> one unconditional option per branch. A **cast** (`assets/cast.ron`) was added
+> alongside: `Show(character:)` and `Say(speaker:)` share an id, which is what
+> lets the engine light the speaking character.
+
 Conditions stay deliberately small. Resist growing an expression language:
 
 ```rust

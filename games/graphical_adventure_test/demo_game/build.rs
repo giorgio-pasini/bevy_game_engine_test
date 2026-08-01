@@ -32,13 +32,17 @@ struct RawScene {
 #[derive(serde::Deserialize)]
 enum RawStep {
     Background(String),
-    Show { image: String, slot: Slot },
+    Show { character: String, slot: Slot },
     Hide { slot: Slot },
     Music(Option<String>),
     Say { speaker: String, text: String },
     Narrate(String),
     Choices(Vec<RawChoice>),
     JumpTo(String),
+    JumpIf { condition: Condition, target: String },
+    Set(String),
+    Clear(String),
+    Add { flag: String, delta: i32 },
     End,
 }
 
@@ -47,7 +51,51 @@ struct RawChoice {
     #[allow(dead_code)]
     text: String,
     target: String,
+    #[serde(default)]
+    condition: Option<Condition>,
 }
+
+#[derive(serde::Deserialize)]
+enum Condition {
+    IsSet(String),
+    IsNotSet(String),
+    AtLeast(String, i32),
+    All(Vec<Condition>),
+    Any(Vec<Condition>),
+}
+
+impl Condition {
+    fn flags_read(&self, out: &mut Vec<String>) {
+        match self {
+            Condition::IsSet(k) | Condition::IsNotSet(k) | Condition::AtLeast(k, _) => {
+                out.push(k.clone())
+            }
+            Condition::All(cs) | Condition::Any(cs) => cs.iter().for_each(|c| c.flags_read(out)),
+        }
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct CastMember {
+    #[allow(dead_code)]
+    name: String,
+    image: String,
+}
+
+/// Image and audio extensions Bevy can actually decode, given the features
+/// enabled for `bevy` in `games/Cargo.toml`.
+///
+/// A build script cannot inspect another crate's feature flags, so this list is
+/// maintained by hand — **keep it in step with the manifest**. It exists because
+/// checking only that a file is present let a `.webp` through while the `webp`
+/// feature was off, which fails at runtime with a decode error rather than at
+/// build time.
+const DECODABLE: &[&str] = &[
+    // images
+    "png", "jpg", "jpeg", "webp", "bmp", "tga", "qoi", "gif", "hdr",
+    // audio
+    "ogg", "mp3", "wav",
+];
 
 #[derive(serde::Deserialize)]
 #[allow(dead_code)]
@@ -109,22 +157,57 @@ fn main() {
         ));
     }
 
+    // ---- cast -------------------------------------------------------------
+
+    let cast_path = assets.join("cast.ron");
+    let cast_text = std::fs::read_to_string(&cast_path)
+        .unwrap_or_else(|e| fail(&format!("cannot read {}: {e}", cast_path.display())));
+    let cast: BTreeMap<String, CastMember> = ron::from_str(&cast_text)
+        .unwrap_or_else(|e| fail(&format!("{}: RON parse error: {e}", cast_path.display())));
+
+    for (id, member) in &cast {
+        check_asset_at(&assets, &member.image, &format!("cast `{id}`"));
+    }
+
     // ---- validation -------------------------------------------------------
 
     let known: BTreeSet<&String> = scenes.keys().collect();
+
+    // Flags written anywhere vs flags read anywhere. Comparing the two is what
+    // catches a mistyped flag name — the failure mode a string-keyed system
+    // invites, and one no compiler can see.
+    let mut flags_written: BTreeSet<String> = BTreeSet::new();
+    let mut flags_read: Vec<(String, String)> = Vec::new();
 
     for (stem, (path, _, scene)) in &scenes {
         for (i, step) in scene.steps.iter().enumerate() {
             let where_ = format!("{} (step {i})", path.display());
 
-            let mut check_asset = |rel: &str| {
-                if !assets.join(rel).is_file() {
-                    fail(&format!(
-                        "{where_}: asset `{rel}` does not exist under {}",
-                        assets.display()
-                    ));
+            match step {
+                RawStep::Set(f) | RawStep::Clear(f) => {
+                    flags_written.insert(f.clone());
                 }
-            };
+                RawStep::Add { flag, .. } => {
+                    flags_written.insert(flag.clone());
+                }
+                RawStep::JumpIf { condition, .. } => {
+                    let mut v = Vec::new();
+                    condition.flags_read(&mut v);
+                    flags_read.extend(v.into_iter().map(|f| (f, where_.clone())));
+                }
+                RawStep::Choices(items) => {
+                    for c in items {
+                        if let Some(cond) = &c.condition {
+                            let mut v = Vec::new();
+                            cond.flags_read(&mut v);
+                            flags_read.extend(v.into_iter().map(|f| (f, where_.clone())));
+                        }
+                    }
+                }
+                _ => {}
+            }
+
+            let mut check_asset = |rel: &str| check_asset_at(&assets, rel, &where_);
 
             let mut check_target = |target: &String| {
                 if !known.contains(target) {
@@ -136,14 +219,33 @@ fn main() {
                 }
             };
 
+            let mut check_cast = |id: &String, what: &str| {
+                if !cast.contains_key(id) {
+                    fail(&format!(
+                        "{where_}: {what} `{id}` is not in cast.ron. Known: {:?}",
+                        cast.keys().collect::<Vec<_>>()
+                    ));
+                }
+            };
+
             match step {
                 RawStep::Background(image) => check_asset(image),
-                RawStep::Show { image, .. } => check_asset(image),
                 RawStep::Music(Some(track)) => check_asset(track),
+                RawStep::Show { character, .. } => check_cast(character, "character"),
+                RawStep::Say { speaker, .. } => check_cast(speaker, "speaker"),
                 RawStep::JumpTo(target) => check_target(target),
+                RawStep::JumpIf { target, .. } => check_target(target),
                 RawStep::Choices(items) => {
                     if items.is_empty() {
                         fail(&format!("{where_}: a Choices step must offer at least one option"));
+                    }
+                    // At least one option must always be available, or a branch
+                    // could leave the player with nothing to click.
+                    if items.iter().all(|c| c.condition.is_some()) {
+                        fail(&format!(
+                            "{where_}: every option is conditional, so this branch can dead-end. \
+                             At least one must be unconditional."
+                        ));
                     }
                     for c in items {
                         check_target(&c.target);
@@ -151,12 +253,24 @@ fn main() {
                 }
                 RawStep::Music(None)
                 | RawStep::Hide { .. }
-                | RawStep::Say { .. }
                 | RawStep::Narrate(_)
+                | RawStep::Set(_)
+                | RawStep::Clear(_)
+                | RawStep::Add { .. }
                 | RawStep::End => {}
             }
         }
         let _ = stem;
+    }
+
+    for (flag, where_) in &flags_read {
+        if !flags_written.contains(flag) {
+            fail(&format!(
+                "{where_}: condition reads flag `{flag}`, which is never set by any scene. \
+                 Flags set somewhere: {:?}",
+                flags_written.iter().collect::<Vec<_>>()
+            ));
+        }
     }
 
     // Reachability: content nobody can ever see is almost always a mistake.
@@ -168,12 +282,27 @@ fn main() {
         }
         if let Some((_, _, scene)) = scenes.get(&stem) {
             for step in &scene.steps {
+                // Every variant is listed rather than using `_ => {}`. A
+                // wildcard here silently skipped `JumpIf` when it was added,
+                // and scenes reachable only through it were wrongly reported
+                // unreachable. Spelling them out makes the compiler demand an
+                // arm for the next new step type.
                 match step {
                     RawStep::JumpTo(t) => queue.push(t.clone()),
+                    RawStep::JumpIf { target, .. } => queue.push(target.clone()),
                     RawStep::Choices(items) => {
                         queue.extend(items.iter().map(|c| c.target.clone()))
                     }
-                    _ => {}
+                    RawStep::Background(_)
+                    | RawStep::Show { .. }
+                    | RawStep::Hide { .. }
+                    | RawStep::Music(_)
+                    | RawStep::Say { .. }
+                    | RawStep::Narrate(_)
+                    | RawStep::Set(_)
+                    | RawStep::Clear(_)
+                    | RawStep::Add { .. }
+                    | RawStep::End => {}
                 }
             }
         }
@@ -243,6 +372,33 @@ fn main() {
     std::fs::write(&dest, out).unwrap_or_else(|e| fail(&format!("cannot write generated file: {e}")));
 
     let _: &Path = &assets;
+}
+
+/// Checks an asset both exists **and** is in a format Bevy was built to decode.
+///
+/// Existence alone is not enough: a file in an unsupported format loads fine as
+/// bytes and then fails at runtime with a decode error, which is exactly the
+/// class of failure this build script exists to prevent.
+fn check_asset_at(assets: &Path, rel: &str, where_: &str) {
+    let path = assets.join(rel);
+    if !path.is_file() {
+        fail(&format!(
+            "{where_}: asset `{rel}` does not exist under {}",
+            assets.display()
+        ));
+    }
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if !DECODABLE.contains(&ext.as_str()) {
+        fail(&format!(
+            "{where_}: asset `{rel}` has extension `.{ext}`, which is not among the formats \
+             enabled for bevy in games/Cargo.toml. Enable the matching feature (and add the \
+             extension to DECODABLE in build.rs), or convert the file. Enabled: {DECODABLE:?}"
+        ));
+    }
 }
 
 /// `golden_gate` -> `GoldenGate`

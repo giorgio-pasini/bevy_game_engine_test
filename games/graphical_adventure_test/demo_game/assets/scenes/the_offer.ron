@@ -1,0 +1,22 @@
+(
+  steps: [
+    Say(speaker: "golem", text: r#"There is work in me that has gone unfinished for six hundred years. Gears that no longer turn. A name I can no longer pronounce."#),
+    Say(speaker: "mira", text: r#"And you want me to what — reach in?"#),
+    Say(speaker: "golem", text: r#"Mend me, and I will carry you over the peaks by morning. Refuse, and I will let you pass. But you will walk, and the walking is long."#),
+
+    Choices([
+      (
+        text: r#"Reach for the seized gear in his chest."#,
+        target: "mending",
+      ),
+      (
+        text: r#""What happens to you if nobody ever does?""#,
+        target: "the_question",
+      ),
+      (
+        text: r#"Step back, and keep your hands to yourself."#,
+        target: "refusal",
+      ),
+    ]),
+  ],
+)

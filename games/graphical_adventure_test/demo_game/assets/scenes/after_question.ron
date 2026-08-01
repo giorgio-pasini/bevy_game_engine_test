@@ -1,0 +1,22 @@
+// Demonstrates a conditional option: the third choice only appears if the
+// player earned enough trust earlier. build.rs requires at least one
+// unconditional option here, so the branch can never dead-end.
+(
+  steps: [
+    Choices([
+      (
+        text: r#"Reach for the seized gear after all."#,
+        target: "mending",
+      ),
+      (
+        text: r#"Step back. This is not your repair to make."#,
+        target: "refusal",
+      ),
+      (
+        text: r#""Tell me the name you can't pronounce. I'll carry it for you.""#,
+        target: "the_name",
+        condition: Some(AtLeast("trust", 3)),
+      ),
+    ]),
+  ],
+)

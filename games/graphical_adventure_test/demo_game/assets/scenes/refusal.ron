@@ -1,0 +1,16 @@
+(
+  steps: [
+    Music(None),
+
+    Say(speaker: "mira", text: r#"No. I don't know what I'd be starting, and neither do you."#),
+    Say(speaker: "golem", text: r#"Wise. Cowardly, but wise. Not every hand that opens me means to close me again."#),
+
+    // The parting line depends on how the conversation went earlier.
+    JumpIf(condition: IsSet("knows_name"), target: "refusal_named"),
+    JumpIf(condition: IsSet("admitted_lost"), target: "refusal_lost"),
+
+    Say(speaker: "golem", text: r#"Go, then. Stranger you came, stranger you leave. It is the usual arrangement."#),
+
+    JumpTo("ending_walked"),
+  ],
+)

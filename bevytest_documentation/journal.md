@@ -11,6 +11,7 @@ and get rewritten freely; this file is what preserves the history behind them.
 
 | Date | Decision | Entry |
 | --- | --- | --- |
+| 2026-08-02 | Enable image codecs generously; cast as the speaker/sprite link; flags and conditions | [2026-08-02](#2026-08-02) |
 | 2026-08-01 | Scenes as RON data validated by `build.rs` — **supersedes** the 2026-07-30 authoring decision | [2026-08-01](#2026-08-01) |
 | 2026-07-31 | Keep Bevy's `3d` profile despite building only 2D games | [2026-07-31](#2026-07-31) |
 | 2026-07-31 | Uniform member dependency lists over cargo aliases | [2026-07-31](#2026-07-31) |
@@ -18,6 +19,75 @@ and get rewritten freely; this file is what preserves the history behind them.
 | 2026-07-30 | Snapshot saves, not `bevy_world_serialization` | [2026-07-30](#2026-07-30) |
 | 2026-07-30 | Cargo workspace over independent projects sharing a target dir | [2026-07-30](#2026-07-30) |
 | 2026-07-30 | Rust toolchain and build cache on D:, not the system drive | [2026-07-30](#2026-07-30) |
+
+---
+
+## 2026-08-02
+
+### What happened
+
+Grew the visual novel into a two-character piece: 16 scenes, four endings, a
+second character on stage, a speaker cue, and a working flag/condition system.
+
+### What we learned
+
+**An existence check is not a loadability check.** A `mountains.webp` background
+was added while Bevy's `webp` feature was off. The build script — written the day
+before and described as thorough — passed it, because the file was undeniably
+present. It would have failed at runtime with a decode error. Validators now
+check the extension against the enabled formats.
+
+The wider lesson: *when you write a validator, ask what it does not check.* This
+one was believed complete for a day.
+
+**A wildcard `match` arm silently discards exhaustiveness.** Adding a `JumpIf`
+step broke two independent graph walkers — the reachability check in `build.rs`
+and its equivalent test — because both ended in `_ => {}`. Three scenes reachable
+only via `JumpIf` were reported unreachable, so the tools blamed the content
+while the tools were wrong.
+
+Notable that the second copy surfaced only after the first was fixed. Both files
+exist to catch mistakes, and both had opted out of the guarantee that makes
+enum-modelled content safe in the first place.
+
+**The architecture absorbed a real feature cleanly.** Flags, conditions, a cast,
+aspect-aware sizing and an animated speaker cue were added without touching the
+story/presentation split. `speaker_cue` is the only system that writes character
+tint or scale, matching the one-writer rule.
+
+### Decisions
+
+**Enable image codecs generously** — `webp`, `bmp`, `tga`, `qoi`, `gif` in one
+change. There is no image equivalent of `audio-all-formats`, and this was the
+third time an unsupported format interrupted work.
+
+**A cast file as the sprite/speaker link.** `Show(character: "mira")` and
+`Say(speaker: "mira")` share an id resolved through `cast.ron`; previously `Show`
+took a path and `Say` a display name, so nothing could tell which sprite was
+talking. Ids stay strings validated by `build.rs` rather than becoming a second
+generic parameter — one type parameter is enough complexity.
+
+**Flags and conditions**, deliberately small: `Set`/`Clear`/`Add`, `JumpIf`, and
+optional per-choice conditions. No nested blocks, no expression language.
+`build.rs` cross-checks flags written against flags read, which catches the
+mistyped-name failure a string-keyed system invites, and requires at least one
+unconditional option per branch so a choice can never dead-end.
+
+### Numbers
+
+| | |
+| --- | --- |
+| Engine rebuild for the new codecs | ~20 min |
+| Incremental rebuild afterwards | 39s |
+| Scenes / endings | 16 / 4 |
+| Build-time guards, each verified by deliberate breakage | 4 |
+| Tests | 5, passing |
+
+### Changed in the other documents
+
+- Guide: *validate that assets load, not merely exist*; *spell out enum variants
+  in code that must handle all of them*.
+- Antipatterns: the two entries above, both with the evidence.
 
 ---
 

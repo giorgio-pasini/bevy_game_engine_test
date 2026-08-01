@@ -1,0 +1,12 @@
+(
+  steps: [
+    Set("admitted_lost"),
+    Add(flag: "trust", delta: 1),
+
+    Say(speaker: "mira", text: r#"I'm lost. I'll admit that much. The map stopped agreeing with the mountain somewhere around dawn."#),
+    Say(speaker: "golem", text: r#"Maps rarely survive contact with this place. Honesty, though — that is rarer still."#),
+    Say(speaker: "mira", text: r#"Don't make it into a virtue. I'm just tired."#),
+
+    JumpTo("the_offer"),
+  ],
+)
