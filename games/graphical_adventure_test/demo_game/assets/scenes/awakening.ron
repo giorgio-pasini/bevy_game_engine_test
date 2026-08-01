@@ -1,0 +1,21 @@
+// The filename is the scene id: this is `awakening`.
+// Every path and every jump target here is checked by build.rs — a mistake
+// fails `cargo build`, not the game.
+(
+  steps: [
+    Background("backgrounds/golem_01.jpg"),
+    Music(Some("music/mystery.ogg")),
+
+    Narrate(r#"Thunder folds the sky into itself. You have been walking for three days, and the mountain has not once looked back at you."#),
+    Narrate(r#"Then the storm parts — and something vast turns its head."#),
+
+    Show(image: "characters/golem.png", slot: Centre),
+
+    Say(
+      speaker: "The Golden Golem",
+      text: r#"You are small, and you are late. I have been counting the winters since anyone last climbed this far."#,
+    ),
+
+    JumpTo("offer"),
+  ],
+)

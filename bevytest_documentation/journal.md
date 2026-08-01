@@ -11,12 +11,88 @@ and get rewritten freely; this file is what preserves the history behind them.
 
 | Date | Decision | Entry |
 | --- | --- | --- |
+| 2026-08-01 | Scenes as RON data validated by `build.rs` — **supersedes** the 2026-07-30 authoring decision | [2026-08-01](#2026-08-01) |
 | 2026-07-31 | Keep Bevy's `3d` profile despite building only 2D games | [2026-07-31](#2026-07-31) |
 | 2026-07-31 | Uniform member dependency lists over cargo aliases | [2026-07-31](#2026-07-31) |
 | 2026-07-30 | Scene structure in Rust, prose in external localised data | [2026-07-30](#2026-07-30) |
 | 2026-07-30 | Snapshot saves, not `bevy_world_serialization` | [2026-07-30](#2026-07-30) |
 | 2026-07-30 | Cargo workspace over independent projects sharing a target dir | [2026-07-30](#2026-07-30) |
 | 2026-07-30 | Rust toolchain and build cache on D:, not the system drive | [2026-07-30](#2026-07-30) |
+
+---
+
+## 2026-08-01
+
+### What happened
+
+Moved the visual novel's scenes out of Rust and into `.ron` files — one per
+scene, prose written inline — and added a `build.rs` that validates them and
+generates the `SceneId` enum from the filenames.
+
+Also set up the repository properly: `.gitignore`, and this documentation set.
+
+### The problem being solved
+
+Authoring scenes in Rust was genuinely unpleasant. `Step` literals are verbose,
+but the real cost was the `TextKey` indirection: adding one line of dialogue
+meant editing two places, the step and the text table. Diagnosing that
+correctly mattered — a format change alone would not have fixed it, because
+keeping keys in YAML would have kept the two-file problem.
+
+### Decision: RON scenes validated at build time — supersedes 2026-07-30
+
+The earlier decision put scene structure in Rust *specifically* so that
+AI-invented scene names became compile errors. That reasoning was never wrong,
+so this does not discard it — it keeps compile-time validation and moves only
+the authoring surface.
+
+`build.rs` runs before the crate compiles, parses every scene file, and fails
+the build on a bad jump target, a missing asset, or an unreachable scene. It
+then generates a `SceneId` enum from the filenames, so Rust code referencing
+scenes stays compile-checked exactly as before.
+
+**RON over YAML, on evidence.** `serde_yaml` publishes as
+`0.9.34+deprecated` (dtolnay, March 2024) and `serde_yml` is *also* deprecated,
+now forwarding to `noyalib`. YAML would mean adopting a dependency mid-churn.
+RON was already in the lock, is Bevy-native, and its grammar supports `r#"..."#`
+raw strings spanning lines — which was YAML's only real advantage for prose.
+
+### What we learned
+
+**"Compile-time" and "test-time" are different guarantees**, and the distinction
+is worth defending. The original proposal was a validation *test*; tests run at
+`cargo test`, which is earlier runtime, not compile time. A build script is what
+actually makes the build fail.
+
+**Both guards were verified by breaking them.** A typo'd jump target produced:
+
+```
+offer.ron (step 3): jumps to `acccept`, but there is no `acccept.ron`.
+Known scenes: ["accept", "awakening", "offer", "refuse"]
+```
+
+and a bad image path failed the same way. Neither was assumed to work.
+
+**The authoring loop is now 9.3 seconds** for a prose edit — the build script
+re-validates and the crate recompiles. Fast enough that hot-reload is a
+convenience rather than a necessity, which is why scene text is embedded at
+build time instead of loaded from disk.
+
+### Numbers
+
+| | |
+| --- | --- |
+| Rebuild after a one-word prose edit | **9.3s** |
+| Rebuild after reverting a scene file | 20.6s |
+| Full build with the new pipeline | 2m41s |
+| Tests | 4, passing; both build-time guards verified by deliberate breakage |
+
+### Changed in the other documents
+
+- Guide: added *validate generated content in a build script*.
+- Antipatterns: added *confusing compile-time with test-time validation* and the
+  YAML-ecosystem finding.
+- `DESIGN.md`: authoring section rewritten; it described the superseded approach.
 
 ---
 

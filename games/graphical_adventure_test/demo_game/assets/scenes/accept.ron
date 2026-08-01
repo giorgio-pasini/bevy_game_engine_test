@@ -1,0 +1,19 @@
+(
+  steps: [
+    Background("backgrounds/golem_09.jpg"),
+    Music(Some("music/calm.ogg")),
+
+    Say(
+      speaker: "The Golden Golem",
+      text: r#"Ah. Warm hands. I had forgotten the shape of that."#,
+    ),
+
+    Narrate(r#"The mechanism gives, complains, and finally turns. Somewhere deep inside the gold, a second heartbeat starts keeping time with yours."#),
+
+    Hide(slot: Centre),
+
+    Narrate(r#"He carries you over the peaks by morning, exactly as promised. Neither of you says anything about the winters."#),
+
+    End,
+  ],
+)

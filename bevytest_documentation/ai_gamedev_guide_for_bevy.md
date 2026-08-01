@@ -99,6 +99,28 @@ playtesting. Adding a variant then makes the compiler hand you the to-do list.
 Asset paths are strings resolved at runtime; no compiler checks them. Put every
 path in a single `match` so one test can validate the whole game.
 
+### Validate external content in `build.rs`, not only in tests
+`[rust]` `[ai-workflow]` — **measured**
+
+When content lives in data files, a build script can parse it, validate it, and
+generate Rust from it. Anything it rejects fails `cargo build` — which is a
+genuinely stronger guarantee than a test, because it cannot be skipped.
+
+This is what makes data-driven content safe for AI-generated work: you keep the
+authoring ergonomics of external files *and* the compile-time rejection of
+invented references.
+
+Worth validating: every cross-reference between files resolves, every asset path
+exists on disk, nothing is unreachable. Generate an enum from the filenames so
+code referencing that content stays compile-checked too, and emit
+`cargo::rerun-if-changed` so edits re-validate.
+
+> Measured: a typo'd scene link failed the build with the file, the step index,
+> the bad name and the list of valid names. Prose edits still rebuild in 9.3s.
+
+It is not a DSL — `serde` does the parsing — so it does not cross the
+over-engineering line that hand-writing a parser would.
+
 ### Write validation tests for what the compiler cannot check
 `[rust]` `[ai-workflow]` — **measured**
 

@@ -6,6 +6,16 @@ edition = "2024"
 [dependencies]
 bevy = { workspace = true }
 vn_core = { path = "../vn_core" }
+ron = { workspace = true }
+serde = { workspace = true }
+
+# build.rs validates assets/scenes/*.ron and generates SceneId from them, so a
+# broken jump or a missing image fails `cargo build` rather than appearing
+# mid-playtest. It deliberately does NOT depend on vn_core — that would drag the
+# whole Bevy graph into the build-dependency tree.
+[build-dependencies]
+ron = { workspace = true }
+serde = { workspace = true }
 
 [features]
 # Must stay identical to vn_core's and snake's `dev` feature — see the note in

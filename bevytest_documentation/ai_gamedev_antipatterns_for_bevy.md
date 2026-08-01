@@ -220,6 +220,74 @@ matching write.
 
 ---
 
+## Confusing compile-time with test-time validation
+
+**What it looks like:** "we'll move content into data files, and add a test that
+walks it — so broken references are caught at compilation time."
+
+**Why it bites:** a test does not run at compile time. It runs at `cargo test`,
+which is earlier runtime. `cargo build` succeeds, `cargo run` succeeds, and a
+broken reference only surfaces if someone remembers to run the tests.
+
+The distinction matters because moving content out of Rust *removes* real
+compile-time guarantees — enum variants and exhaustive matches — and it is easy
+to believe a test replaces them when it does not.
+
+**What actually gives compile-time validation:** a build script. `build.rs` runs
+before the crate compiles, so anything it rejects fails the build outright.
+
+> Verified by deliberate breakage. A typo'd scene target produced:
+> ``offer.ron (step 3): jumps to `acccept`, but there is no `acccept.ron`.
+> Known scenes: ["accept", "awakening", "offer", "refuse"]`` — and `cargo build`
+> exited non-zero.
+
+Keep the tests as well: the build script validates against the files present at
+build time, and tests catch an asset deleted afterwards, without needing a GPU.
+
+---
+
+## Reaching for YAML in Rust without checking the ecosystem
+
+**What it looks like:** YAML is the obvious choice for human-authored content —
+block scalars, minimal punctuation, ideal for prose.
+
+**Why it bites:** the serde YAML ecosystem is currently unsettled.
+
+> Checked 2026-08-01: `serde_yaml` publishes as **`0.9.34+deprecated`** (last
+> released March 2024, deliberately marked by its author). `serde_yml`, the
+> usual replacement, is **also** deprecated and is now a shim forwarding to
+> `noyalib`.
+
+Adopting YAML means picking a dependency mid-migration, in a project where
+dependency changes cost real build time.
+
+**Instead:** RON is already in Bevy's tree, has a documented custom-asset-loader
+example, and supports `r#"..."#` raw strings spanning multiple lines — which was
+YAML's only substantive advantage for prose. Check crate health before adopting
+a format, not after.
+
+---
+
+## Fixing the syntax when the problem is the indirection
+
+**What it looks like:** authoring content is painful, so change the file format.
+
+**Why it bites:** the format may not be what hurts. In this project, scenes were
+verbose Rust *and* prose lived behind `TextKey` in a separate table — so adding
+one line of dialogue meant editing two files. Moving to a new format while
+keeping the keys would have preserved the actual friction and delivered a
+disappointing improvement.
+
+**Instead:** identify which part of the workflow costs the most edits before
+choosing a fix. Here the win came from writing prose inline next to the line
+that speaks it; the format change was secondary.
+
+Localisation was the original reason for the indirection, and it is not lost —
+it becomes an *extraction* step later, which is how real localisation tooling
+works anyway.
+
+---
+
 ## Optimising a metric instead of the goal
 
 **What it looks like:** "we cut the build from 532 crates to 75."

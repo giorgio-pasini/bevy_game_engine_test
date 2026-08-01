@@ -127,9 +127,9 @@ pub fn spawn_end_screen(mut commands: Commands, locale: Res<Locale>) {
 /// can tell what actually changed rather than rebuilding every frame.
 #[derive(Resource, Default)]
 pub struct AppliedStage {
-    pub background: Option<&'static str>,
-    pub characters: BTreeMap<Slot, &'static str>,
-    pub music: Option<&'static str>,
+    pub background: Option<String>,
+    pub characters: BTreeMap<Slot, String>,
+    pub music: Option<String>,
 }
 
 /// Spawned on entering `Playing` and torn down automatically on leaving it.
@@ -207,10 +207,10 @@ pub fn sync_background(
     for e in &existing {
         commands.entity(e).despawn();
     }
-    if let Some(path) = stage.background {
+    if let Some(path) = stage.background.as_ref() {
         commands.spawn((
             Sprite {
-                image: assets.load(path),
+                image: assets.load(path.clone()),
                 custom_size: Some(Vec2::new(DESIGN_W, DESIGN_H)),
                 image_mode: SpriteImageMode::Scale(SpriteScalingMode::FillCenter),
                 ..default()
@@ -219,7 +219,7 @@ pub fn sync_background(
             BackgroundSprite,
         ));
     }
-    applied.background = stage.background;
+    applied.background = stage.background.clone();
 }
 
 pub fn sync_characters(
@@ -245,7 +245,7 @@ pub fn sync_characters(
         let size = DESIGN_H * 0.86;
         commands.spawn((
             Sprite {
-                image: assets.load(*path),
+                image: assets.load(path.clone()),
                 custom_size: Some(Vec2::splat(size)),
                 ..default()
             },
@@ -269,9 +269,9 @@ pub fn sync_music(
     for e in &existing {
         commands.entity(e).despawn();
     }
-    if let Some(path) = stage.music {
+    if let Some(path) = stage.music.as_ref() {
         commands.spawn((
-            AudioPlayer::new(assets.load(path)),
+            AudioPlayer::new(assets.load(path.clone())),
             PlaybackSettings {
                 mode: bevy::audio::PlaybackMode::Loop,
                 volume: bevy::audio::Volume::Linear(0.5),
@@ -280,7 +280,7 @@ pub fn sync_music(
             MusicPlayer,
         ));
     }
-    applied.music = stage.music;
+    applied.music = stage.music.clone();
 }
 
 /// Typewriter. Reveals by *count*, never by mutating the source string — so
@@ -313,7 +313,7 @@ pub fn draw_dialogue(
     mut hint: Query<&mut Text, (With<ContinueHint>, Without<SpeakerText>, Without<BodyText>)>,
 ) {
     if let Ok(mut t) = speaker.single_mut() {
-        t.0 = line.speaker.unwrap_or("").to_string();
+        t.0 = line.speaker.clone().unwrap_or_default();
     }
     if let Ok(mut t) = body.single_mut() {
         t.0 = line.visible();
@@ -327,7 +327,7 @@ pub fn draw_dialogue(
     }
 }
 
-pub fn spawn_choices(mut commands: Commands, choices: Res<PendingChoices>, locale: Res<Locale>) {
+pub fn spawn_choices(mut commands: Commands, choices: Res<PendingChoices>) {
     if choices.items.is_empty() {
         return;
     }
@@ -346,7 +346,7 @@ pub fn spawn_choices(mut commands: Commands, choices: Res<PendingChoices>, local
             ChoiceRoot,
         ))
         .with_children(|parent| {
-            for (key, index) in &choices.items {
+            for (label, index) in &choices.items {
                 parent
                     .spawn((
                         Button,
@@ -362,7 +362,7 @@ pub fn spawn_choices(mut commands: Commands, choices: Res<PendingChoices>, local
                     ))
                     .with_children(|b| {
                         b.spawn((
-                            Text::new((locale.resolve)(*key)),
+                            Text::new(label.clone()),
                             TextFont {
                                 font_size: FontSize::Px(24.0),
                                 ..default()

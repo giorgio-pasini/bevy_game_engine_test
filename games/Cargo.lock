@@ -2268,6 +2268,8 @@ name = "demo_game"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "ron",
+ "serde",
  "vn_core",
 ]
 

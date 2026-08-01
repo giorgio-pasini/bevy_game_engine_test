@@ -6,6 +6,7 @@
 //! Part 2.1.
 
 use bevy::prelude::*;
+use serde::Deserialize;
 use std::collections::BTreeMap;
 
 /// Blanket trait for a game's scene enum. Being an enum is what makes jumps
@@ -21,13 +22,20 @@ impl<T> SceneKey for T where
 {
 }
 
-/// Indirection between a line and its localised prose. Deliberately *not*
-/// verified at compile time — a validation test covers it instead.
+/// Indirection between a line and its localised prose.
+///
+/// Retained for menu chrome and for the eventual localisation pipeline. Scene
+/// prose is authored inline instead — see [`Step::Say`] — because splitting it
+/// out meant editing two files to add one line of dialogue.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct TextKey(pub &'static str);
 
 /// Where a character stands. Named positions, never raw pixels.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+///
+/// Stays a Rust enum so RON still type-checks it at parse time: `Centre` is
+/// validated, `Centrre` is a parse error. External data does not have to mean
+/// stringly-typed.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Deserialize)]
 pub enum Slot {
     Left,
     Centre,
@@ -36,28 +44,102 @@ pub enum Slot {
 
 #[derive(Clone)]
 pub struct Choice<S> {
-    pub text: TextKey,
+    pub text: String,
     pub target: S,
+}
+
+/// A choice as written in a scene file, before its target is resolved to a
+/// scene id.
+#[derive(Clone, Deserialize)]
+pub struct RawChoice {
+    pub text: String,
+    pub target: String,
 }
 
 #[derive(Clone)]
 pub enum Step<S> {
     /// Replace the background image.
-    Background { image: &'static str },
+    Background { image: String },
     /// Place a character sprite at a slot.
-    Show { image: &'static str, slot: Slot },
+    Show { image: String, slot: Slot },
     /// Clear a slot.
     Hide { slot: Slot },
     /// `None` stops the music.
-    Music { track: Option<&'static str> },
+    Music { track: Option<String> },
     /// A character speaks. Blocking.
-    Say { speaker: &'static str, text: TextKey },
+    Say { speaker: String, text: String },
     /// Unattributed prose. Blocking.
-    Narrate { text: TextKey },
+    Narrate { text: String },
     /// Offer a branch. Blocking.
     Choices(Vec<Choice<S>>),
     JumpTo(S),
     End,
+}
+
+/// A step exactly as written in a `.ron` scene file.
+///
+/// Targets are still strings here. [`Scene::resolve`] turns them into scene ids,
+/// and `build.rs` has already proven every one of them resolves — so the
+/// conversion cannot fail in a shipped build.
+#[derive(Clone, Deserialize)]
+pub enum RawStep {
+    Background(String),
+    Show { image: String, slot: Slot },
+    Hide { slot: Slot },
+    Music(Option<String>),
+    Say { speaker: String, text: String },
+    Narrate(String),
+    Choices(Vec<RawChoice>),
+    JumpTo(String),
+    End,
+}
+
+/// A scene file's contents, before target resolution.
+#[derive(Clone, Deserialize)]
+pub struct RawScene {
+    pub steps: Vec<RawStep>,
+}
+
+impl RawScene {
+    /// Converts to a runnable scene, mapping target names through `lookup`.
+    ///
+    /// `lookup` returns `None` for an unknown name. That is unreachable in a
+    /// build that compiled, because `build.rs` validates every target — the
+    /// error path exists only so a hand-edited file fails loudly instead of
+    /// silently misbehaving.
+    pub fn resolve<S: SceneKey>(
+        self,
+        id: S,
+        lookup: impl Fn(&str) -> Option<S>,
+    ) -> Result<Scene<S>, String> {
+        let mut steps = Vec::with_capacity(self.steps.len());
+        for raw in self.steps {
+            steps.push(match raw {
+                RawStep::Background(image) => Step::Background { image },
+                RawStep::Show { image, slot } => Step::Show { image, slot },
+                RawStep::Hide { slot } => Step::Hide { slot },
+                RawStep::Music(track) => Step::Music { track },
+                RawStep::Say { speaker, text } => Step::Say { speaker, text },
+                RawStep::Narrate(text) => Step::Narrate { text },
+                RawStep::JumpTo(name) => Step::JumpTo(
+                    lookup(&name).ok_or_else(|| format!("unknown scene `{name}`"))?,
+                ),
+                RawStep::Choices(items) => {
+                    let mut out = Vec::with_capacity(items.len());
+                    for c in items {
+                        out.push(Choice {
+                            text: c.text,
+                            target: lookup(&c.target)
+                                .ok_or_else(|| format!("unknown scene `{}`", c.target))?,
+                        });
+                    }
+                    Step::Choices(out)
+                }
+                RawStep::End => Step::End,
+            });
+        }
+        Ok(Scene { id, steps })
+    }
 }
 
 // Steps split into two kinds: `Background`, `Show`, `Hide`, `Music` and
@@ -97,18 +179,18 @@ pub struct StoryState<S: SceneKey> {
 }
 
 /// Derived presentation state. Rebuilt from the story, never authored directly.
-#[derive(Resource, Default)]
+#[derive(Resource, Default, PartialEq, Eq, Clone)]
 pub struct Stage {
-    pub background: Option<&'static str>,
-    pub characters: BTreeMap<Slot, &'static str>,
-    pub music: Option<&'static str>,
+    pub background: Option<String>,
+    pub characters: BTreeMap<Slot, String>,
+    pub music: Option<String>,
 }
 
 /// The line currently on screen, plus how much of it has been revealed.
 #[derive(Resource, Default)]
 pub struct CurrentLine {
-    pub speaker: Option<&'static str>,
-    pub full: &'static str,
+    pub speaker: Option<String>,
+    pub full: String,
     pub revealed: usize,
     pub timer: f32,
 }
@@ -132,7 +214,7 @@ impl CurrentLine {
 /// Choices awaiting an answer. Empty when not in a branch.
 #[derive(Resource, Default)]
 pub struct PendingChoices {
-    pub items: Vec<(TextKey, usize)>,
+    pub items: Vec<(String, usize)>,
 }
 
 /// Top-level screen. The story only runs inside `Playing`.
@@ -188,7 +270,6 @@ pub const TEXT_SPEED: f32 = 45.0;
 pub fn advance<S: SceneKey>(
     state: &mut StoryState<S>,
     script: &Script<S>,
-    locale: &Locale,
     stage: &mut Stage,
     line: &mut CurrentLine,
     choices: &mut PendingChoices,
@@ -223,7 +304,7 @@ pub fn advance<S: SceneKey>(
             Step::Say { speaker, text } => {
                 *line = CurrentLine {
                     speaker: Some(speaker),
-                    full: (locale.resolve)(text),
+                    full: text,
                     revealed: 0,
                     timer: 0.0,
                 };
@@ -233,7 +314,7 @@ pub fn advance<S: SceneKey>(
             Step::Narrate { text } => {
                 *line = CurrentLine {
                     speaker: None,
-                    full: (locale.resolve)(text),
+                    full: text,
                     revealed: 0,
                     timer: 0.0,
                 };
@@ -244,7 +325,7 @@ pub fn advance<S: SceneKey>(
                 choices.items = items
                     .iter()
                     .enumerate()
-                    .map(|(i, c)| (c.text, i))
+                    .map(|(i, c)| (c.text.clone(), i))
                     .collect();
                 // Deliberately does NOT advance `step`: the branch is resolved
                 // by the player's answer, which replaces the scene outright.

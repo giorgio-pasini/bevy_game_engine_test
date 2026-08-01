@@ -96,21 +96,13 @@ fn clear_stage(mut stage: ResMut<Stage>) {
 fn restart<S: SceneKey>(
     mut state: ResMut<StoryState<S>>,
     script: Res<Script<S>>,
-    locale: Res<Locale>,
     mut stage: ResMut<Stage>,
     mut line: ResMut<CurrentLine>,
     mut choices: ResMut<PendingChoices>,
     mut next: ResMut<NextState<PlayMode>>,
 ) {
     reset(&mut state, &script, &mut stage, &mut line, &mut choices);
-    let mode = advance(
-        &mut state,
-        &script,
-        &locale,
-        &mut stage,
-        &mut line,
-        &mut choices,
-    );
+    let mode = advance(&mut state, &script, &mut stage, &mut line, &mut choices);
     next.set(mode);
 }
 
@@ -141,7 +133,6 @@ fn advance_on_input<S: SceneKey>(
     mode: Res<State<PlayMode>>,
     mut state: ResMut<StoryState<S>>,
     script: Res<Script<S>>,
-    locale: Res<Locale>,
     mut stage: ResMut<Stage>,
     mut line: ResMut<CurrentLine>,
     mut choices: ResMut<PendingChoices>,
@@ -160,14 +151,7 @@ fn advance_on_input<S: SceneKey>(
             next.set(PlayMode::AwaitingInput);
         }
         PlayMode::AwaitingInput => {
-            let m = advance(
-                &mut state,
-                &script,
-                &locale,
-                &mut stage,
-                &mut line,
-                &mut choices,
-            );
+            let m = advance(&mut state, &script, &mut stage, &mut line, &mut choices);
             next.set(m);
         }
         // Clicking a choice is handled by `choose_on_click`; a stray click
@@ -180,7 +164,6 @@ fn choose_on_click<S: SceneKey>(
     buttons: Query<(&Interaction, &ChoiceButton), Changed<Interaction>>,
     mut state: ResMut<StoryState<S>>,
     script: Res<Script<S>>,
-    locale: Res<Locale>,
     mut stage: ResMut<Stage>,
     mut line: ResMut<CurrentLine>,
     mut choices: ResMut<PendingChoices>,
@@ -192,14 +175,7 @@ fn choose_on_click<S: SceneKey>(
         }
         if take_choice(button.0, &mut state, &script) {
             choices.items.clear();
-            let m = advance(
-                &mut state,
-                &script,
-                &locale,
-                &mut stage,
-                &mut line,
-                &mut choices,
-            );
+            let m = advance(&mut state, &script, &mut stage, &mut line, &mut choices);
             next.set(m);
         }
         break;
