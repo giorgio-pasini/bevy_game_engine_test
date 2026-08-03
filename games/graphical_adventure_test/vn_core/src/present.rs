@@ -29,16 +29,10 @@ pub struct CharacterSprite {
     pub id: String,
 }
 
-/// Height a character occupies, in design units. Width follows from the image's
-/// real aspect ratio, so portrait and square art both render undistorted.
-const CHARACTER_HEIGHT: f32 = DESIGN_H * 0.82;
-
-/// How strongly listeners are dimmed, and how far the speaker rises.
-const DIM: f32 = 0.45;
-const SPEAKER_RISE: f32 = 26.0;
-const SPEAKER_SCALE: f32 = 1.04;
-/// Units per second for the eased transition.
-const CUE_SPEED: f32 = 7.0;
+// Character size, slot spacing and the speaker cue are all tunable from
+// `presentation.ron` — see the `Presentation` resource. Nothing here is a magic
+// number any more, which is the point: adjusting the look should not mean
+// editing Rust.
 
 #[derive(Component)]
 pub struct SpeakerText;
@@ -242,6 +236,7 @@ pub fn sync_characters(
     mut commands: Commands,
     stage: Res<Stage>,
     cast: Res<Cast>,
+    tuning: Res<Presentation>,
     mut applied: ResMut<AppliedStage>,
     assets: Res<AssetServer>,
     existing: Query<(Entity, &CharacterSprite)>,
@@ -259,9 +254,9 @@ pub fn sync_characters(
             continue;
         };
         let x = match slot {
-            Slot::Left => -DESIGN_W * 0.26,
+            Slot::Left => -DESIGN_W * tuning.slot_offset,
             Slot::Centre => 0.0,
-            Slot::Right => DESIGN_W * 0.26,
+            Slot::Right => DESIGN_W * tuning.slot_offset,
         };
         commands.spawn((
             Sprite {
@@ -271,7 +266,7 @@ pub fn sync_characters(
                 // undistorted.
                 ..default()
             },
-            Transform::from_xyz(x, BOX_HEIGHT * 0.5, Z_CHARACTER),
+            Transform::from_xyz(x, baseline(&tuning), Z_CHARACTER),
             CharacterSprite {
                 slot: *slot,
                 id: id.clone(),
@@ -288,9 +283,11 @@ pub fn sync_characters(
 /// the texture is available, then leaves the sprite alone.
 pub fn fit_characters(
     images: Res<Assets<Image>>,
-    mut sprites: Query<&mut Sprite, With<CharacterSprite>>,
+    cast: Res<Cast>,
+    tuning: Res<Presentation>,
+    mut sprites: Query<(&CharacterSprite, &mut Sprite)>,
 ) {
-    for mut sprite in &mut sprites {
+    for (character, mut sprite) in &mut sprites {
         if sprite.custom_size.is_some() {
             continue;
         }
@@ -301,9 +298,23 @@ pub fn fit_characters(
         if size.y == 0 {
             continue;
         }
+        // Global height, scaled per character so a giant and a person can share
+        // one setting.
+        let per_character = cast
+            .0
+            .get(&character.id)
+            .map(|m| m.scale)
+            .unwrap_or(1.0);
+        let height = DESIGN_H * tuning.character_height * per_character;
         let aspect = size.x as f32 / size.y as f32;
-        sprite.custom_size = Some(Vec2::new(CHARACTER_HEIGHT * aspect, CHARACTER_HEIGHT));
+        sprite.custom_size = Some(Vec2::new(height * aspect, height));
     }
+}
+
+/// Characters stand on a common baseline rather than being centred, so sprites
+/// of different heights line up at the feet instead of floating.
+fn baseline(tuning: &Presentation) -> f32 {
+    -DESIGN_H * 0.5 + tuning.character_baseline + DESIGN_H * tuning.character_height * 0.5
 }
 
 /// Dims listeners; brightens, raises and slightly enlarges the speaker.
@@ -313,9 +324,10 @@ pub fn fit_characters(
 pub fn speaker_cue(
     time: Res<Time>,
     line: Res<CurrentLine>,
+    tuning: Res<Presentation>,
     mut sprites: Query<(&CharacterSprite, &mut Sprite, &mut Transform)>,
 ) {
-    let t = (time.delta_secs() * CUE_SPEED).clamp(0.0, 1.0);
+    let t = (time.delta_secs() * tuning.cue_speed).clamp(0.0, 1.0);
 
     for (character, mut sprite, mut transform) in &mut sprites {
         let speaking = line.speaker.as_deref() == Some(character.id.as_str());
@@ -323,15 +335,19 @@ pub fn speaker_cue(
         // With nobody speaking (narration), everyone sits at full brightness so
         // the scene does not look uniformly greyed out.
         let anybody_speaking = line.speaker.is_some();
-        let target_tint = if speaking || !anybody_speaking { 1.0 } else { DIM };
-        let target_rise = if speaking { SPEAKER_RISE } else { 0.0 };
-        let target_scale = if speaking { SPEAKER_SCALE } else { 1.0 };
+        let target_tint = if speaking || !anybody_speaking {
+            1.0
+        } else {
+            tuning.listener_dim
+        };
+        let target_rise = if speaking { tuning.speaker_rise } else { 0.0 };
+        let target_scale = if speaking { tuning.speaker_scale } else { 1.0 };
 
         let current = sprite.color.to_linear().red;
         let tint = current + (target_tint - current) * t;
         sprite.color = Color::linear_rgb(tint, tint, tint);
 
-        let base_y = BOX_HEIGHT * 0.5;
+        let base_y = baseline(&tuning);
         let y = transform.translation.y;
         transform.translation.y = y + ((base_y + target_rise) - y) * t;
 
@@ -372,6 +388,7 @@ pub fn sync_music(
 /// "skip to full line" and the backlog stay trivial.
 pub fn reveal_text(
     time: Res<Time>,
+    tuning: Res<Presentation>,
     mut line: ResMut<CurrentLine>,
     mode: Res<State<PlayMode>>,
     mut next: ResMut<NextState<PlayMode>>,
@@ -379,7 +396,7 @@ pub fn reveal_text(
     if *mode.get() != PlayMode::Revealing {
         return;
     }
-    line.timer += time.delta_secs() * TEXT_SPEED;
+    line.timer += time.delta_secs() * tuning.text_speed;
     let target = line.timer as usize;
     if target > line.revealed {
         line.revealed = target;

@@ -66,6 +66,50 @@ pub struct CastMember {
     /// Shown in the dialogue box.
     pub name: String,
     pub image: String,
+    /// Multiplies the global character height, so a giant and a person can
+    /// share one setting. Defaults to 1.0.
+    #[serde(default = "one")]
+    pub scale: f32,
+}
+
+fn one() -> f32 {
+    1.0
+}
+
+/// Visual tuning, loaded from `presentation.ron`.
+///
+/// These are the numbers you actually want to fiddle with, kept out of Rust so
+/// adjusting them is an edit and a rebuild rather than a code change. All
+/// lengths are in design units (a 1920x1080 stage).
+#[derive(Resource, Clone, Deserialize)]
+pub struct Presentation {
+    /// Character sprite height as a fraction of stage height.
+    pub character_height: f32,
+    /// Left/Right slot distance from centre, as a fraction of stage width.
+    pub slot_offset: f32,
+    /// How far above the stage bottom characters stand.
+    pub character_baseline: f32,
+    pub listener_dim: f32,
+    pub speaker_rise: f32,
+    pub speaker_scale: f32,
+    pub cue_speed: f32,
+    /// Characters revealed per second.
+    pub text_speed: f32,
+}
+
+impl Default for Presentation {
+    fn default() -> Self {
+        Self {
+            character_height: 0.60,
+            slot_offset: 0.24,
+            character_baseline: 130.0,
+            listener_dim: 0.45,
+            speaker_rise: 26.0,
+            speaker_scale: 1.04,
+            cue_speed: 7.0,
+            text_speed: 45.0,
+        }
+    }
 }
 
 /// Character id -> who they are. Loaded from `cast.ron`; `build.rs` guarantees
@@ -359,8 +403,7 @@ pub fn reset<S: SceneKey>(
     choices.items.clear();
 }
 
-/// Characters revealed per second.
-pub const TEXT_SPEED: f32 = 45.0;
+// Text speed now lives in `Presentation`, loaded from presentation.ron.
 
 /// Applies steps from the current position until a blocking one is reached.
 ///

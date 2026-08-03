@@ -80,6 +80,31 @@ struct CastMember {
     #[allow(dead_code)]
     name: String,
     image: String,
+    /// Multiplies the global character height. Optional in the file.
+    #[serde(default = "one")]
+    scale: f32,
+}
+
+fn one() -> f32 {
+    1.0
+}
+
+/// Mirror of `vn_core::story::Presentation`, for build-time validation only.
+/// Every field is required, so a missing key is a serde error naming it.
+#[derive(serde::Deserialize)]
+struct PresentationCheck {
+    character_height: f32,
+    #[allow(dead_code)]
+    slot_offset: f32,
+    #[allow(dead_code)]
+    character_baseline: f32,
+    listener_dim: f32,
+    #[allow(dead_code)]
+    speaker_rise: f32,
+    #[allow(dead_code)]
+    speaker_scale: f32,
+    cue_speed: f32,
+    text_speed: f32,
 }
 
 /// Image and audio extensions Bevy can actually decode, given the features
@@ -167,6 +192,35 @@ fn main() {
 
     for (id, member) in &cast {
         check_asset_at(&assets, &member.image, &format!("cast `{id}`"));
+        if member.scale <= 0.0 {
+            fail(&format!("cast `{id}`: scale must be positive, got {}", member.scale));
+        }
+    }
+
+    // Tuning file: parsed here so a typo or a missing key fails the build rather
+    // than panicking at launch. Every field is required, so serde reports an
+    // omission for us — no hand-written key list to fall out of date.
+    let pres_path = assets.join("presentation.ron");
+    let pres_text = std::fs::read_to_string(&pres_path)
+        .unwrap_or_else(|e| fail(&format!("cannot read {}: {e}", pres_path.display())));
+    let pres: PresentationCheck = ron::from_str(&pres_text).unwrap_or_else(|e| {
+        fail(&format!("{}: {e}", pres_path.display()))
+    });
+    if pres.character_height <= 0.0 {
+        fail(&format!("{}: character_height must be positive", pres_path.display()));
+    }
+    if !(0.0..=1.0).contains(&pres.listener_dim) {
+        fail(&format!(
+            "{}: listener_dim must be between 0.0 and 1.0, got {}",
+            pres_path.display(),
+            pres.listener_dim
+        ));
+    }
+    if pres.cue_speed <= 0.0 || pres.text_speed <= 0.0 {
+        fail(&format!(
+            "{}: cue_speed and text_speed must be positive",
+            pres_path.display()
+        ));
     }
 
     // ---- validation -------------------------------------------------------

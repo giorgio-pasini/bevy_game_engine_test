@@ -1,0 +1,34 @@
+// Visual tuning. Edit, rebuild (~40s), look. No Rust involved.
+//
+// All positions and sizes are in DESIGN UNITS: the stage is always 1920x1080
+// of them regardless of window size, so a value here means the same thing on
+// every monitor.
+(
+  // Height of a character sprite, as a fraction of stage height.
+  // Width follows from each image's real aspect ratio, so art of any shape
+  // stays undistorted. 0.82 was too large — two figures nearly touched in the
+  // middle. Around 0.60 gives the usual visual-novel framing.
+  character_height: 0.60,
+
+  // Horizontal position of the Left/Right slots, as a fraction of stage width
+  // from the centre. Raise it to push the characters further apart.
+  slot_offset: 0.24,
+
+  // How far above the bottom of the stage characters stand. Increase to lift
+  // them clear of the dialogue box.
+  character_baseline: 130.0,
+
+  // --- speaker cue ---------------------------------------------------------
+  // How much listeners are dimmed. 1.0 = no dimming, 0.0 = black.
+  listener_dim: 0.45,
+  // How far the speaker rises, in design units.
+  speaker_rise: 26.0,
+  // How much the speaker grows. 1.0 = no growth.
+  speaker_scale: 1.04,
+  // Easing speed of the cue. Higher snaps faster.
+  cue_speed: 7.0,
+
+  // --- dialogue ------------------------------------------------------------
+  // Characters revealed per second by the typewriter.
+  text_speed: 45.0,
+)

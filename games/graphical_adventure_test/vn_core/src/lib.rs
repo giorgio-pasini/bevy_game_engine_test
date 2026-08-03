@@ -28,6 +28,8 @@ pub struct VnPlugin<S: SceneKey> {
     /// Character id -> display name and image. `build.rs` guarantees every id a
     /// scene references is present.
     pub cast: Cast,
+    /// Visual tuning from `presentation.ron`.
+    pub tuning: Presentation,
 }
 
 impl<S: SceneKey> Plugin for VnPlugin<S> {
@@ -43,6 +45,7 @@ impl<S: SceneKey> Plugin for VnPlugin<S> {
             resolve: self.locale.resolve,
         })
         .insert_resource(self.cast.clone())
+        .insert_resource(self.tuning.clone())
         .insert_resource(StoryState::<S> {
             scene: start,
             step: 0,

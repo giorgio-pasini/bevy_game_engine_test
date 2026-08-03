@@ -30,6 +30,7 @@ fn main() {
                 resolve: scenes::text_en,
             },
             cast: scenes::cast(),
+            tuning: scenes::presentation(),
         })
         .run();
 }

@@ -26,6 +26,15 @@ pub fn cast() -> Cast {
     Cast(ron::from_str(CAST_SOURCE).unwrap_or_else(|e| panic!("cast.ron failed to parse: {e}")))
 }
 
+/// Visual tuning — character size, slot spacing, the speaker cue, text speed.
+/// Edit `assets/presentation.ron` and rebuild; no Rust changes needed.
+const PRESENTATION_SOURCE: &str = include_str!("../assets/presentation.ron");
+
+pub fn presentation() -> Presentation {
+    ron::from_str(PRESENTATION_SOURCE)
+        .unwrap_or_else(|e| panic!("presentation.ron failed to parse: {e}"))
+}
+
 /// Menu chrome. Not story content, so it stays in Rust rather than becoming a
 /// scene file.
 pub fn text_en(key: TextKey) -> &'static str {
