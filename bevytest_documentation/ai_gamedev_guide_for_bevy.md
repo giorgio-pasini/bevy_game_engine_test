@@ -76,6 +76,34 @@ features and become consequences. Returning a visual novel to its menu needed
 exactly one line — clearing the derived stage — because the same systems that
 built the screen tore it down.
 
+### Derive from state; do not cache what you can ask for
+`[bevy]` `[architecture]` — **confirmed**
+
+This is the same rule as *presentation is a pure function of state*, applied to
+the engine's own bookkeeping rather than to the screen — and it is the one that
+gets forgotten, because caching feels like an optimisation rather than a design
+decision.
+
+Five separate bugs in a single session were all one shape: something remembered
+a fact, and reality moved underneath it.
+
+- A `Local` remembered which screen had been drawn; a state exit despawned it,
+  and the system then refused to redraw because it "already had".
+- A `_ => {}` arm remembered which enum variants existed; a new one appeared.
+- Code assumed setting the current state was a no-op; the engine re-ran the
+  transition.
+- A replay assumed the top of a stack was the whole story; frames beneath it
+  held the rest.
+- Content assumed a background someone else had set; another entry path had not.
+
+Each fix was the same move: **stop remembering, start asking.** Query the world
+for what exists instead of tracking what you spawned. Rebuild from state instead
+of patching it incrementally.
+
+The tell is a variable whose job is to describe something the world already
+knows. Whenever you find one, ask what happens when the world changes without
+telling it — and in an ECS, the world changes without telling anything.
+
 ### One writer per piece of data
 `[bevy]` `[architecture]` — **confirmed**
 
@@ -146,6 +174,28 @@ reason to model content as enums at all.
 > Two independent graph walkers in the same project both used a wildcard and
 > both silently skipped a newly added variant, producing false "unreachable
 > content" reports that blamed the content rather than the tool.
+
+### Walk the whole content graph in a test, not by hand
+`[ai-workflow]` `[testing]` — **measured**
+
+Branching content cannot be verified by playing it. A test that runs the *real*
+engine functions over the *real* content, exploring every choice and every
+option with a visited-set to bound it, checks every path in about a millisecond.
+
+Assert the things a player would notice: no decision point offers nothing, no
+location strands you, at least one ending is reachable, and the walk terminates.
+
+> Found a genuine exploit on its first run: an action returned the player to the
+> room that offered it, so a counter could be farmed indefinitely. That state
+> space is infinite, which is *why* the walk failed to terminate — the
+> non-termination was the bug report. No hand-playthrough finds this, because a
+> person does the action once and moves on.
+
+Deduplicate on **push**, not on pop: popping-and-discarding lets duplicates
+accumulate faster than they are consumed.
+
+Be honest about the boundary: this validates content, not the engine. A UI that
+fails to redraw passes it happily.
 
 ### Write validation tests for what the compiler cannot check
 `[rust]` `[ai-workflow]` — **measured**

@@ -1,5 +1,6 @@
 (
   steps: [
+    Background("backgrounds/mountains.webp"),
     Hide(slot: Right),
 
     Narrate(r#"The cloud closes over him as she passes. She walks."#),

@@ -1,5 +1,6 @@
 (
   steps: [
+    Background("backgrounds/mountains.webp"),
     Music(None),
 
     Say(speaker: "mira", text: r#"No. I don't know what I'd be starting, and neither do you."#),

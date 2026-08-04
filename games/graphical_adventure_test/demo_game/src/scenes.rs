@@ -35,6 +35,23 @@ pub fn presentation() -> Presentation {
         .unwrap_or_else(|e| panic!("presentation.ron failed to parse: {e}"))
 }
 
+/// Explorable places, from `assets/places/*.ron`.
+pub fn places() -> Places {
+    let mut map = BTreeMap::new();
+    for (id, source) in PLACE_SOURCES {
+        let place: Place = ron::from_str(source)
+            .unwrap_or_else(|e| panic!("place `{id}` failed to parse: {e}"));
+        map.insert((*id).to_string(), place);
+    }
+    Places(map)
+}
+
+/// Resolves a scene name written in a place file to its generated id.
+/// `build.rs` has already proven every such name exists.
+pub fn scene_of_name(name: &str) -> Option<SceneId> {
+    SceneId::from_stem(name)
+}
+
 /// Menu chrome. Not story content, so it stays in Rust rather than becoming a
 /// scene file.
 pub fn text_en(key: TextKey) -> &'static str {
@@ -172,10 +189,173 @@ mod tests {
         }
     }
 
+    /// Exhaustively plays **every branch** of the game and asserts no path
+    /// dead-ends.
+    ///
+    /// This is the answer to "must I replay every branch by hand?" for content:
+    /// a depth-first walk over the real story, taking every choice and every
+    /// place option, running the actual engine functions rather than a model of
+    /// them. It reaches states no hand-playthrough would bother with — the
+    /// third option after refusing, having read the cairn but not the ledge.
+    ///
+    /// It cannot see *engine* bugs. When the option buttons failed to redraw on
+    /// returning from a called scene, the content was perfectly valid and this
+    /// walk would have passed. Catching that needs a headless run of the real
+    /// app, which is a separate piece of work.
+    #[test]
+    fn no_reachable_path_dead_ends() {
+        let script = Script {
+            scene_of: scene,
+            start: START,
+        };
+        let places = places();
+
+        // Identity of a situation: where we are, plus what we know and carry.
+        // Deduplicating on PUSH keeps the queue bounded — doing it on pop lets
+        // duplicates accumulate faster than they are discarded, which is how the
+        // first version of this test ran away.
+        fn key<S: std::fmt::Debug>(s: &StoryState<SceneId>) -> String
+        where
+            S: Sized,
+        {
+            format!("{:?}|{:?}|{:?}", s.stack, s.flags, s.items)
+        }
+
+        let start_state = StoryState {
+            stack: vec![Frame::Story {
+                scene: START,
+                step: 0,
+            }],
+            current: scene(START),
+            flags: Default::default(),
+            items: Default::default(),
+        };
+
+        let mut visited: BTreeSet<String> = BTreeSet::new();
+        visited.insert(key::<SceneId>(&start_state));
+        let mut queue = vec![start_state];
+
+        let mut endings = 0usize;
+        let mut steps = 0usize;
+
+        // Pushes only genuinely new situations.
+        macro_rules! push {
+            ($visited:expr, $queue:expr, $s:expr) => {{
+                let k = key::<SceneId>(&$s);
+                if $visited.insert(k) {
+                    $queue.push($s);
+                }
+            }};
+        }
+
+        while let Some(mut state) = queue.pop() {
+            steps += 1;
+            assert!(steps < 50_000, "walk did not terminate — a cycle with no exit?");
+
+            let mut stage = Stage::default();
+            let mut line = CurrentLine::default();
+            let mut choices = PendingChoices::default();
+
+            let flow = advance(&mut state, &script, &mut stage, &mut line, &mut choices);
+
+            match flow {
+                Flow::Ended => endings += 1,
+                Flow::Playing(PlayMode::AwaitingChoice) => {
+                    assert!(
+                        !choices.items.is_empty(),
+                        "a Choices step offered nothing with flags {:?} — dead end",
+                        state.flags
+                    );
+                    for (_, index) in &choices.items {
+                        let mut branch = state.clone();
+                        if take_choice(*index, &mut branch, &script) {
+                            push!(visited, queue, branch);
+                        }
+                    }
+                }
+                Flow::Playing(_) => {
+                    // A line to read: advancing continues from here.
+                    push!(visited, queue, state);
+                }
+                Flow::Exploring => {
+                    let id = state.current_place().unwrap().to_string();
+                    let options = places.available(&id, &state.flags, &state.items);
+                    assert!(
+                        !options.is_empty(),
+                        "place `{id}` offers nothing with flags {:?} — the player is stranded",
+                        state.flags
+                    );
+                    for (index, _) in options {
+                        let mut branch = state.clone();
+                        take_option(index, &mut branch, &script, &places, SceneId::from_stem);
+                        push!(visited, queue, branch);
+                    }
+                }
+            }
+        }
+
+        assert!(endings > 0, "no path ever reaches an ending");
+    }
+
+    /// Every scene and place a place option points at must exist.
+    #[test]
+    fn every_place_target_resolves() {
+        let places = places();
+        let mut bad = Vec::new();
+        for (id, place) in &places.0 {
+            for option in &place.options {
+                match &option.effect {
+                    Effect::GoTo(t) if !places.0.contains_key(t) => {
+                        bad.push(format!("{id}: GoTo unknown place `{t}`"))
+                    }
+                    Effect::Call(s) if SceneId::from_stem(s).is_none() => {
+                        bad.push(format!("{id}: Call unknown scene `{s}`"))
+                    }
+                    _ => {}
+                }
+            }
+        }
+        assert!(bad.is_empty(), "{bad:?}");
+    }
+
+    /// Walks scenes AND places together. Scenes reached only through a place's
+    /// `Call` would look unreachable to a scenes-only walk.
     #[test]
     fn every_scene_is_reachable_from_start() {
+        let places = places();
+        let mut seen_places: BTreeSet<String> = BTreeSet::new();
+        let mut place_queue: Vec<String> = Vec::new();
         let mut seen = BTreeSet::new();
         let mut queue = vec![START];
+
+        // Seed with every place any scene explores, then follow places into the
+        // scenes they call.
+        for id in SceneId::ALL {
+            for step in scene(*id).steps {
+                if let Step::Explore { place } = step {
+                    place_queue.push(place);
+                }
+            }
+        }
+        while let Some(p) = place_queue.pop() {
+            if !seen_places.insert(p.clone()) {
+                continue;
+            }
+            if let Some(place) = places.get(&p) {
+                for option in &place.options {
+                    match &option.effect {
+                        Effect::GoTo(t) => place_queue.push(t.clone()),
+                        Effect::Call(s) => {
+                            if let Some(id) = SceneId::from_stem(s) {
+                                queue.push(id);
+                            }
+                        }
+                        Effect::Leave => {}
+                    }
+                }
+            }
+        }
+
         while let Some(id) = queue.pop() {
             if !seen.insert(id) {
                 continue;
@@ -191,7 +371,12 @@ mod tests {
                     Step::JumpTo(t) => queue.push(t),
                     Step::JumpIf { target, .. } => queue.push(target),
                     Step::Choices(items) => queue.extend(items.iter().map(|c| c.target)),
-                    Step::Background { .. }
+                    // `Explore` reaches places, not scenes. Scenes reachable
+                    // only through a place's `Call` are covered by
+                    // `every_place_target_resolves` below and, definitively, by
+                    // build.rs's combined-graph walk.
+                    Step::Explore { .. }
+                    | Step::Background { .. }
                     | Step::Show { .. }
                     | Step::Hide { .. }
                     | Step::Music { .. }
@@ -200,6 +385,8 @@ mod tests {
                     | Step::Set { .. }
                     | Step::Clear { .. }
                     | Step::Add { .. }
+                    | Step::GiveItem { .. }
+                    | Step::TakeItem { .. }
                     | Step::End => {}
                 }
             }

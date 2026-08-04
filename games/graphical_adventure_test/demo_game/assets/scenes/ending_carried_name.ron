@@ -1,5 +1,6 @@
 (
   steps: [
+    Background("backgrounds/mountains.webp"),
     Narrate(r#"She says the name once, near the summit, mostly to check that she still has it. The wind takes it and gives nothing back."#),
     Narrate(r#"Below the pass she stops counting the winters he told her about, and starts counting the ones ahead. It is a better arithmetic, and it is his now as much as hers."#),
 

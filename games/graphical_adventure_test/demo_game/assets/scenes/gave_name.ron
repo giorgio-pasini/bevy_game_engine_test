@@ -1,5 +1,6 @@
 (
   steps: [
+    Background("backgrounds/mountains.webp"),
     Set("knows_name"),
     Add(flag: "trust", delta: 2),
 

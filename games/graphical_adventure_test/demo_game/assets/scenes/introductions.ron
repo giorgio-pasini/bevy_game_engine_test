@@ -1,5 +1,6 @@
 (
   steps: [
+    Background("backgrounds/mountains.webp"),
     Say(speaker: "golem", text: r#"Speak, then. Travellers used to give a name before they gave demands."#),
 
     Choices([

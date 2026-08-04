@@ -3,6 +3,7 @@
 // unconditional option here, so the branch can never dead-end.
 (
   steps: [
+    Background("backgrounds/mountains.webp"),
     Choices([
       (
         text: r#"Reach for the seized gear after all."#,

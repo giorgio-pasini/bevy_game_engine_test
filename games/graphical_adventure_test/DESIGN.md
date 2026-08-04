@@ -62,6 +62,14 @@ Be precise about what this does and does not buy:
 That residual gap is closed by a validation test (Part 4), not by wishful
 thinking.
 
+> **RESCOPED 2026-08-04.** This is no longer a pure visual novel. It is a visual
+> novel **and** point-and-click adventure engine: story and exploration call each
+> other freely through a control stack, places have exits and actions, and
+> inventory is in scope. The seams described in Part 6 are now implemented
+> architecture rather than future extension points, and several entries in Part
+> 4's over-engineering table have deliberately moved from "not yet" to "in
+> scope". See `bevytest_documentation/journal.md` (2026-08-04).
+
 #### 2. Pure visual novel, with seams for point-and-click
 
 Only VN mechanics are implemented. But three seams are specified now so that
@@ -642,6 +650,42 @@ prototype's build combined dropping `3d`, adding `jpeg`, `mp3`, `wav`,
 
 Dropping the `3d` profile took that build from **532 crates to 75**, and the
 saving repeats on every future rebuild.
+
+## Part 8b — Backlog
+
+Wanted, not yet built. Recorded here rather than left in conversation.
+
+### Grey out options already taken
+
+When a choice or place option is re-encountered, dim it if the player has
+already followed it — so a branch tree shows at a glance which leaves have been
+explored. Standard visual-novel practice, and it matters most in exploration,
+where the same room is revisited many times.
+
+**Design note:** `DESIGN.md` already planned a *seen-line* set to support "skip
+read text". This wants the same mechanism applied to *decisions* rather than
+lines: a set of `(scene, step, option index)` and `(place, option index)`.
+
+It belongs in the **profile**, not the save file — like gallery unlocks, an
+explored branch stays explored across a reload. Adding it to `StoryState` would
+mean reloading an earlier save "un-explored" options the player has genuinely
+seen.
+
+Presentation is then a tint on the existing option buttons, which already run
+through one styling helper.
+
+### Stages still outstanding
+
+3. Inventory in play (`GiveItem`/`TakeItem` exist; nothing grants an item yet)
+4. Map hotspots with colour-keyed lookup images
+5. Save/load across the control stack
+
+### Headless app tests
+
+Every engine bug so far — flicker, dead ends, silent music, blank screens — was
+found by a human playing, and none were visible to the build, the tests or the
+exit code. Tests that run the real Bevy app headlessly and assert invariants
+("in `Exploring`, at least one option button exists") would close that gap.
 
 ## Part 9 — Open risks
 

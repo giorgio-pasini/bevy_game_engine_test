@@ -1,0 +1,19 @@
+// Hands control to the exploration phase, and picks it up again afterwards.
+// `Explore` pushes a frame; choosing "Go on over the peaks" in the ridge pops
+// it, and the story resumes at the step after this one.
+(
+  steps: [
+    Background("backgrounds/mountains.webp"),
+    Say(speaker: "mira", text: r#"Give me a minute. I don't decide things this size standing still."#),
+
+    Explore("ridge"),
+
+    // Everything below runs only after the player leaves the ridge.
+    Say(speaker: "golem", text: r#"Well. You have had your minute, and rather more of them than that."#),
+
+    JumpIf(condition: IsSet("read_cairn"), target: "wander_saw_cairn"),
+
+    Say(speaker: "mira", text: r#"It's a big mountain. Fine. Let's do this."#),
+    JumpTo("mending"),
+  ],
+)

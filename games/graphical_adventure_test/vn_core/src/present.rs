@@ -6,6 +6,7 @@
 use bevy::prelude::*;
 use std::collections::BTreeMap;
 
+use crate::place::*;
 use crate::story::*;
 
 /// Design-space size. The camera shows exactly this, letterboxed.
@@ -480,6 +481,135 @@ pub fn spawn_choices(mut commands: Commands, choices: Res<PendingChoices>) {
                     });
             }
         });
+}
+
+/// One option in a place. Carries the index into that place's unfiltered
+/// option list, so a click maps back correctly even when some are hidden.
+#[derive(Component)]
+pub struct PlaceOptionButton(pub usize);
+
+/// Carries the place it was built for, so the refresh check can be stateless.
+///
+/// An earlier version tracked "what is currently shown" in a `Local`, which
+/// went stale the moment the UI was despawned by a state exit — returning from
+/// a called scene then rebuilt nothing and left the player stranded with a
+/// background and no options. Asking the world what exists cannot desync;
+/// remembering what you spawned can.
+#[derive(Component)]
+pub struct ExploreRoot(pub String);
+
+/// Draws the current place: caption and available options.
+///
+/// Backgrounds and music are not touched here — the place's own values are
+/// pushed into `Stage`, and the same reconcilers that serve the narrative phase
+/// render them. Exploration is a different UI, not a different renderer.
+pub fn spawn_place_view<S: SceneKey>(
+    mut commands: Commands,
+    state: Res<StoryState<S>>,
+    places: Res<Places>,
+    mut stage: ResMut<Stage>,
+) {
+    let Some(id) = state.current_place() else {
+        return;
+    };
+    let Some(place) = places.get(id) else {
+        warn!("place `{id}` not found");
+        return;
+    };
+
+    // Exploration has no cast on stage; clearing avoids characters lingering
+    // from the scene that called us.
+    stage.background = Some(place.background.clone());
+    stage.characters.clear();
+    if let Some(track) = &place.music {
+        stage.music = Some(track.clone());
+    }
+
+    let options = places.available(id, &state.flags, &state.items);
+
+    commands
+        .spawn((
+            DespawnOnExit(AppState::Exploring),
+            Node {
+                width: percent(100),
+                height: percent(100),
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::FlexEnd,
+                padding: UiRect::all(Val::Px(48.0)),
+                row_gap: Val::Px(12.0),
+                ..default()
+            },
+            ExploreRoot(id.to_string()),
+        ))
+        .with_children(|parent| {
+            if let Some(caption) = &place.caption {
+                parent.spawn((
+                    Node {
+                        margin: UiRect::bottom(Val::Px(18.0)),
+                        ..default()
+                    },
+                    Text::new(caption.clone()),
+                    TextFont {
+                        font_size: FontSize::Px(30.0),
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.98, 0.82, 0.36)),
+                ));
+            }
+            for (index, option) in options {
+                parent
+                    .spawn((
+                        Button,
+                        Node {
+                            width: Val::Px(700.0),
+                            padding: UiRect::all(Val::Px(14.0)),
+                            justify_content: JustifyContent::Center,
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(0.10, 0.12, 0.18, 0.92)),
+                        BorderColor::all(Color::srgb(0.98, 0.82, 0.36)),
+                        PlaceOptionButton(index),
+                    ))
+                    .with_children(|b| {
+                        b.spawn((
+                            Text::new(option.label.clone()),
+                            TextFont {
+                                font_size: FontSize::Px(23.0),
+                                ..default()
+                            },
+                            TextColor(Color::srgb(0.94, 0.95, 0.97)),
+                        ));
+                    });
+            }
+        });
+}
+
+/// Rebuilds the place view whenever what is on screen does not match the place
+/// we are in.
+///
+/// Two situations need this, and `OnEnter(Exploring)` catches neither reliably:
+/// moving between rooms keeps the same `AppState`, and returning from a called
+/// scene destroys the UI without changing the place.
+pub fn refresh_place_view<S: SceneKey>(
+    mut commands: Commands,
+    state: Res<StoryState<S>>,
+    places: Res<Places>,
+    stage: ResMut<Stage>,
+    roots: Query<(Entity, &ExploreRoot)>,
+) {
+    let Some(current) = state.current_place() else {
+        return;
+    };
+
+    // Already showing the right place? Nothing to do.
+    if roots.iter().any(|(_, root)| root.0 == current) {
+        return;
+    }
+    for (e, _) in &roots {
+        commands.entity(e).despawn();
+    }
+    spawn_place_view::<S>(commands, state, places, stage);
 }
 
 pub fn highlight_choices(

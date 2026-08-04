@@ -220,6 +220,39 @@ matching write.
 
 ---
 
+## Caching what the world already knows
+
+**What it looks like:** a `Local`, a field, or an assumption that records
+something about the game's state so it need not be recomputed. Ordinary,
+sensible-looking code.
+
+**Why it bites:** in an ECS the world changes without notifying anything. The
+cache is right until it silently isn't, and the failure appears far from the
+cause.
+
+**Evidence — five bugs in one session, all the same shape:**
+
+| Cached | What moved | Symptom |
+| --- | --- | --- |
+| "which place is displayed" in a `Local` | `DespawnOnExit` removed the UI | Room actions became dead ends: background, no buttons |
+| "these are all the variants" via `_ => {}` | a `JumpIf` step was added | Reachable content reported unreachable, twice |
+| "setting my current state is a no-op" | Bevy runs identity transitions | Every click re-ran `OnEnter` and restarted the story |
+| "the top stack frame is the whole story" | frames beneath held the background | Called scenes rendered blank |
+| "a background is already on screen" | another entry path had cleared it | 20 scenes blank down some routes only |
+
+**Cost:** four of the five were invisible to a clean build, a clean test run and
+a zero exit code. Every one was found by a human playing the game.
+
+**Instead:** query the world for what exists rather than tracking what you
+spawned; rebuild derived state from authoritative state rather than patching it;
+list enum variants explicitly; and compare against the current state before
+setting it.
+
+The general form: **if a variable's job is to describe something the world
+already knows, delete it and ask the world.**
+
+---
+
 ## Using `_ => {}` in code that must handle every variant
 
 **What it looks like:** a `match` over a content enum that only cares about a few

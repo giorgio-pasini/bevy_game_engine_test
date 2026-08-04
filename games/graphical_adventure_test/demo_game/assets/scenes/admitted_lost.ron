@@ -1,5 +1,6 @@
 (
   steps: [
+    Background("backgrounds/mountains.webp"),
     Set("admitted_lost"),
     Add(flag: "trust", delta: 1),
 

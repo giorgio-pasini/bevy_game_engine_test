@@ -1,5 +1,6 @@
 (
   steps: [
+    Background("backgrounds/mountains.webp"),
     Set("carries_name"),
     Music(Some("music/calm.ogg")),
 

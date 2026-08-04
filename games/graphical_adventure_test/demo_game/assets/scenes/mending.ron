@@ -1,5 +1,6 @@
 (
   steps: [
+    Background("backgrounds/mountains.webp"),
     Music(Some("music/calm.ogg")),
 
     Narrate(r#"The bent wheel resists, complains, and finally gives. Something deep in the gold starts keeping time with her pulse."#),

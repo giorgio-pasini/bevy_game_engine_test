@@ -1,5 +1,6 @@
 (
   steps: [
+    Background("backgrounds/mountains.webp"),
     Hide(slot: Right),
 
     Narrate(r#"He carries her over the peaks by morning, exactly as promised."#),

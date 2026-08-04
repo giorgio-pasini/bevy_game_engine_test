@@ -31,6 +31,8 @@ fn main() {
             },
             cast: scenes::cast(),
             tuning: scenes::presentation(),
+            places: scenes::places(),
+            scene_of_name: scenes::scene_of_name,
         })
         .run();
 }

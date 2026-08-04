@@ -1,5 +1,6 @@
 (
   steps: [
+    Background("backgrounds/mountains.webp"),
     Narrate(r#"You keep your mouth shut and your eyes on the machinery: a lattice of gold wheels, most of them still, one of them bent badly out of true."#),
 
     Say(speaker: "golem", text: r#"Careful. Staring is its own kind of demand."#),

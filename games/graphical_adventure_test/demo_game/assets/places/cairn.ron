@@ -1,0 +1,8 @@
+(
+  background: "backgrounds/mountains.webp",
+  caption: Some("A cairn of flat stones, shoulder high"),
+  options: [
+    (label: "Read the marks cut into the top stone", effect: Call("cairn_marks")),
+    (label: "Back to the ridge",                     effect: GoTo("ridge")),
+  ],
+)

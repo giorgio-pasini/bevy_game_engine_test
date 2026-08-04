@@ -1,0 +1,12 @@
+// Place id = filename. Options are uniform: movement, actions and leaving
+// differ only by `effect`. build.rs checks every target, scene and asset.
+(
+  background: "backgrounds/mountains.webp",
+  caption: Some("The ridge, above the cloud line"),
+  options: [
+    (label: "Walk up to the cairn",        effect: GoTo("cairn")),
+    (label: "Climb down to the ledge",     effect: GoTo("ledge")),
+    (label: "Ask the golem about the pass", effect: Call("pass_talk")),
+    (label: "Go on over the peaks",        effect: Leave),
+  ],
+)

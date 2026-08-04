@@ -1,0 +1,12 @@
+(
+  steps: [
+    Background("backgrounds/mountains.webp"),
+    Add(flag: "trust", delta: 2),
+    Say(speaker: "mira", text: r#"Someone counted every winter you did. Six hundred and eleven marks, cut by hand, and then they stopped."#),
+    Say(speaker: "golem", text: r#"I know."#),
+    Say(speaker: "mira", text: r#"You said nobody had climbed this far."#),
+    Say(speaker: "golem", text: r#"Nobody had. They were already here."#),
+    Narrate(r#"He does not elaborate, and she decides — for now — not to make him."#),
+    JumpTo("mending"),
+  ],
+)

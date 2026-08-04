@@ -1,0 +1,16 @@
+(
+  steps: [
+    Background("backgrounds/mountains.webp"),
+    // Marks the discovery so the option disappears afterwards. Without this the
+    // player could re-search the ledge indefinitely and farm `trust` — which is
+    // exactly what the exhaustive walk caught.
+    Set("found_gear"),
+    Add(flag: "trust", delta: 1),
+    Narrate(r#"The marked stone comes away easily. Behind it, wrapped in oiled cloth, is a brass gear no bigger than her palm — and unmistakably the shape of the one seized in his chest."#),
+    Say(speaker: "mira", text: r#"Someone left this here. For you. And then stopped coming."#),
+    Say(speaker: "golem", text: r#"...Yes."#),
+    Say(speaker: "golem", text: r#"Bring it up. Please."#),
+    Narrate(r#"It is the first time he has asked for anything."#),
+    End,
+  ],
+)

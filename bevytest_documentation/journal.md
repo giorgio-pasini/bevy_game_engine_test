@@ -11,6 +11,7 @@ and get rewritten freely; this file is what preserves the history behind them.
 
 | Date | Decision | Entry |
 | --- | --- | --- |
+| 2026-08-04 | **Scope change**: pure VN → VN + point-and-click; control stack; every scene must set its own background | [2026-08-04](#2026-08-04) |
 | 2026-08-02 | Enable image codecs generously; cast as the speaker/sprite link; flags and conditions | [2026-08-02](#2026-08-02) |
 | 2026-08-01 | Scenes as RON data validated by `build.rs` — **supersedes** the 2026-07-30 authoring decision | [2026-08-01](#2026-08-01) |
 | 2026-07-31 | Keep Bevy's `3d` profile despite building only 2D games | [2026-07-31](#2026-07-31) |
@@ -19,6 +20,88 @@ and get rewritten freely; this file is what preserves the history behind them.
 | 2026-07-30 | Snapshot saves, not `bevy_world_serialization` | [2026-07-30](#2026-07-30) |
 | 2026-07-30 | Cargo workspace over independent projects sharing a target dir | [2026-07-30](#2026-07-30) |
 | 2026-07-30 | Rust toolchain and build cache on D:, not the system drive | [2026-07-30](#2026-07-30) |
+
+---
+
+## 2026-08-04
+
+### What happened
+
+Added an exploration phase: places with exits and actions, a control stack so
+story and exploration call each other freely, and inventory conditions. Stage 1
+of five.
+
+### Decision: the project is no longer a pure visual novel
+
+`DESIGN.md` was written as "pure VN, designed for later extension", with
+inventory explicitly deferred. It is now a visual novel **and** point-and-click
+adventure engine: freely mixed control, room option lists, map hotspots
+(colour-keyed, later), and inventory. The over-engineering boundary moved with
+it — several entries listed as "do not do yet" are now in scope on purpose.
+
+Delivery is staged, each stage playable, precisely because the scope grew.
+
+### Decision: every scene must set its own background
+
+Content that relies on state established elsewhere renders correctly down the
+path you tested and blank down the others. **20 of 24 scenes** were inheriting
+whatever happened to be on screen; a phase change clears the stage, so calling
+one of them from a place produced an empty screen. `build.rs` now rejects a
+scene that speaks before setting a background, naming it.
+
+Music went the other way: it is now **persistent state, not derived
+presentation**. No replay of the current stack can know which earlier scene
+started the track, and silence-by-default is wrong for a soundtrack.
+
+### What we learned — five bugs, one shape
+
+Every engine bug this session was something cached diverging from reality: a
+`Local` holding "what is displayed", a `_ => {}` arm holding "these are all the
+variants", an assumption that setting the current state is a no-op, a replay
+assuming the top frame was the whole story, and content assuming a background
+someone else had set.
+
+The architecture's founding rule — *presentation is a pure function of state* —
+was the fix for all five. It had been applied to the screen but not to the
+engine's own bookkeeping.
+
+**And every one was found by the user playing, not by any check.** A clean
+build, seven passing tests and exit code 0 accompanied a game that flickered,
+dead-ended, fell silent and rendered blank. Process exit codes are not
+validation any more than type-checking is.
+
+### What the automated checks *did* catch
+
+The exhaustive branch walk, added in response to "must I replay every branch by
+hand?", found a genuine exploit on its first run: an action returned the player
+to the room offering it, so `trust` could be farmed indefinitely. Infinite state
+space — which is why the walk failed to terminate. The non-termination *was* the
+bug report.
+
+`build.rs` caught the 20 backgroundless scenes, an unknown place target, and a
+place with no unconditional exit.
+
+### Numbers
+
+| | |
+| --- | --- |
+| Scenes / places / endings | 24 / 3 / 4 |
+| Build-time guards | 7, each verified by deliberate breakage |
+| Tests | 7, including the exhaustive walk (<1 ms) |
+| Incremental rebuild | ~25–40s |
+
+### Changed in the other documents
+
+- Guide: *derive from state, do not cache what you can ask for*; *walk the whole
+  content graph in a test*.
+- Antipatterns: *caching what the world already knows*, with the five-bug table.
+- `DESIGN.md`: rescoped; Part 6's seams are now implemented architecture.
+
+### Still open
+
+Headless tests that run the real app would have caught the dead ends and the
+flicker — the one gap the other layers cannot reach. Stages 3–5 (inventory, map
+hotspots, save/load) remain.
 
 ---
 

@@ -7,7 +7,9 @@
 
 use bevy::prelude::*;
 use serde::Deserialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+
+use crate::place::{Effect, Places};
 
 /// Blanket trait for a game's scene enum. Being an enum is what makes jumps
 /// compile-checked: `Step::JumpTo(SceneId::Forest)` cannot name a scene that
@@ -138,24 +140,31 @@ impl Cast {
 /// visual novel, and an expression language is the classic over-engineering
 /// trap. Extending it means adding a variant, which the compiler then demands
 /// be handled everywhere.
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Debug)]
 pub enum Condition {
     IsSet(String),
     IsNotSet(String),
     AtLeast(String, i32),
+    /// Inventory. Items are deliberately modelled as richer flags rather than
+    /// as a verb matrix — an action can require one, and that covers most
+    /// adventure puzzles without per-item-per-target authoring.
+    HasItem(String),
+    LacksItem(String),
     All(Vec<Condition>),
     Any(Vec<Condition>),
 }
 
 impl Condition {
-    pub fn holds(&self, flags: &BTreeMap<String, i32>) -> bool {
+    pub fn holds(&self, flags: &BTreeMap<String, i32>, items: &BTreeSet<String>) -> bool {
         let get = |k: &String| flags.get(k).copied().unwrap_or(0);
         match self {
             Condition::IsSet(k) => get(k) != 0,
             Condition::IsNotSet(k) => get(k) == 0,
             Condition::AtLeast(k, n) => get(k) >= *n,
-            Condition::All(cs) => cs.iter().all(|c| c.holds(flags)),
-            Condition::Any(cs) => cs.iter().any(|c| c.holds(flags)),
+            Condition::HasItem(i) => items.contains(i),
+            Condition::LacksItem(i) => !items.contains(i),
+            Condition::All(cs) => cs.iter().all(|c| c.holds(flags, items)),
+            Condition::Any(cs) => cs.iter().any(|c| c.holds(flags, items)),
         }
     }
 
@@ -165,9 +174,24 @@ impl Condition {
             Condition::IsSet(k) | Condition::IsNotSet(k) | Condition::AtLeast(k, _) => {
                 out.push(k.clone())
             }
+            Condition::HasItem(_) | Condition::LacksItem(_) => {}
             Condition::All(cs) | Condition::Any(cs) => {
                 for c in cs {
                     c.flags_read(out);
+                }
+            }
+        }
+    }
+
+    /// Every item this condition requires. Checked against items granted
+    /// anywhere, the same way flags are.
+    pub fn items_read(&self, out: &mut Vec<String>) {
+        match self {
+            Condition::HasItem(i) | Condition::LacksItem(i) => out.push(i.clone()),
+            Condition::IsSet(_) | Condition::IsNotSet(_) | Condition::AtLeast(_, _) => {}
+            Condition::All(cs) | Condition::Any(cs) => {
+                for c in cs {
+                    c.items_read(out);
                 }
             }
         }
@@ -199,6 +223,13 @@ pub enum Step<S> {
     Clear { flag: String },
     /// Add to a counter.
     Add { flag: String, delta: i32 },
+    GiveItem { item: String },
+    TakeItem { item: String },
+    /// Hand control to the exploration phase. Returns here when the player
+    /// leaves that place.
+    Explore { place: String },
+    /// Finish this frame and return to whatever called it. With an empty stack
+    /// beneath, the game ends.
     End,
 }
 
@@ -221,6 +252,9 @@ pub enum RawStep {
     Set(String),
     Clear(String),
     Add { flag: String, delta: i32 },
+    GiveItem(String),
+    TakeItem(String),
+    Explore(String),
     End,
 }
 
@@ -254,6 +288,9 @@ impl RawScene {
                 RawStep::Set(flag) => Step::Set { flag },
                 RawStep::Clear(flag) => Step::Clear { flag },
                 RawStep::Add { flag, delta } => Step::Add { flag, delta },
+                RawStep::GiveItem(item) => Step::GiveItem { item },
+                RawStep::TakeItem(item) => Step::TakeItem { item },
+                RawStep::Explore(place) => Step::Explore { place },
                 RawStep::JumpTo(name) => Step::JumpTo(
                     lookup(&name).ok_or_else(|| format!("unknown scene `{name}`"))?,
                 ),
@@ -308,16 +345,94 @@ pub struct Locale {
     pub resolve: fn(TextKey) -> &'static str,
 }
 
+/// One level of the control stack.
+///
+/// Story and exploration call each other freely — Ren'Py's `call`/`return`
+/// model — so "where we are" is a stack, not a cursor.
+#[derive(Clone, Debug)]
+pub enum Frame<S> {
+    Story { scene: S, step: usize },
+    Explore { place: String },
+}
+
 /// Everything that would go into a save file. Presentation is absent on
 /// purpose — it is derived, never stored.
-#[derive(Resource)]
+#[derive(Resource, Clone)]
 pub struct StoryState<S: SceneKey> {
-    pub scene: S,
-    pub step: usize,
+    /// Top of the stack is the current context. Empty means the game is over.
+    pub stack: Vec<Frame<S>>,
+    /// Scene cached for the topmost `Story` frame, so steps are not re-resolved
+    /// every tick.
     pub current: Scene<S>,
-    /// Booleans are stored as 0/1 so flags and counters share one map — which
-    /// keeps this whole struct trivially serialisable for the save system.
+    /// Booleans are stored as 0/1 so flags and counters share one map.
     pub flags: BTreeMap<String, i32>,
+    /// Inventory.
+    pub items: BTreeSet<String>,
+}
+
+impl<S: SceneKey> StoryState<S> {
+    /// The step index of the topmost `Story` frame, if that is what we are in.
+    pub fn story_step(&self) -> Option<usize> {
+        match self.stack.last() {
+            Some(Frame::Story { step, .. }) => Some(*step),
+            _ => None,
+        }
+    }
+
+    pub fn current_place(&self) -> Option<&str> {
+        match self.stack.last() {
+            Some(Frame::Explore { place }) => Some(place.as_str()),
+            _ => None,
+        }
+    }
+
+    fn set_story_step(&mut self, n: usize) {
+        if let Some(Frame::Story { step, .. }) = self.stack.last_mut() {
+            *step = n;
+        }
+    }
+
+    /// Replaces the top `Story` frame's scene and rewinds it.
+    fn enter_scene(&mut self, id: S, script: &Script<S>) {
+        self.current = (script.scene_of)(id);
+        match self.stack.last_mut() {
+            Some(Frame::Story { scene, step }) => {
+                *scene = id;
+                *step = 0;
+            }
+            _ => self.stack.push(Frame::Story {
+                scene: id,
+                step: 0,
+            }),
+        }
+    }
+
+    /// Pushes a scene, to be returned from later.
+    pub fn call_scene(&mut self, id: S, script: &Script<S>) {
+        self.stack.push(Frame::Story {
+            scene: id,
+            step: 0,
+        });
+        self.current = (script.scene_of)(id);
+    }
+
+    pub fn push_place(&mut self, place: String) {
+        self.stack.push(Frame::Explore { place });
+    }
+
+    /// Pops the current frame. Restores the cached scene if the frame beneath is
+    /// a story frame. Returns false when the stack empties — the game is over.
+    pub fn pop(&mut self, script: &Script<S>) -> bool {
+        self.stack.pop();
+        match self.stack.last() {
+            Some(Frame::Story { scene, .. }) => {
+                self.current = (script.scene_of)(*scene);
+                true
+            }
+            Some(Frame::Explore { .. }) => true,
+            None => false,
+        }
+    }
 }
 
 /// Derived presentation state. Rebuilt from the story, never authored directly.
@@ -364,7 +479,11 @@ pub struct PendingChoices {
 pub enum AppState {
     #[default]
     MainMenu,
+    /// Narrative phase.
     Playing,
+    /// Exploration phase. Story and exploration call each other freely; which
+    /// one is active is simply whatever is on top of the control stack.
+    Exploring,
 }
 
 /// In-story mode. A *sub*-state of `Playing`, so it simply does not exist while
@@ -394,10 +513,15 @@ pub fn reset<S: SceneKey>(
     line: &mut CurrentLine,
     choices: &mut PendingChoices,
 ) {
-    state.scene = script.start;
+    // A single frame at the opening scene — the stack unwinds completely, so a
+    // restart cannot inherit a half-finished exploration from the last run.
+    state.stack = vec![Frame::Story {
+        scene: script.start,
+        step: 0,
+    }];
     state.current = (script.scene_of)(script.start);
-    state.step = 0;
     state.flags.clear();
+    state.items.clear();
     *stage = Stage::default();
     *line = CurrentLine::default();
     choices.items.clear();
@@ -405,64 +529,99 @@ pub fn reset<S: SceneKey>(
 
 // Text speed now lives in `Presentation`, loaded from presentation.ron.
 
-/// Applies steps from the current position until a blocking one is reached.
+/// Applies steps from the current frame until control has to stop — a line to
+/// read, a choice to make, a place to explore, or an empty stack.
 ///
 /// This is the whole story engine. Everything else in the crate reacts to the
 /// `Stage` and `CurrentLine` it leaves behind.
+///
+/// Where control ended up after advancing.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Flow {
+    /// Still in a scene, in the given mode.
+    Playing(PlayMode),
+    /// Top of the stack is now a place.
+    Exploring,
+    /// The stack emptied.
+    Ended,
+}
+
 pub fn advance<S: SceneKey>(
     state: &mut StoryState<S>,
     script: &Script<S>,
     stage: &mut Stage,
     line: &mut CurrentLine,
     choices: &mut PendingChoices,
-) -> PlayMode {
+) -> Flow {
     loop {
-        let Some(step) = state.current.steps.get(state.step).cloned() else {
-            return PlayMode::Finished;
+        // Only story frames step. Anything else means control has moved.
+        let Some(here) = state.story_step() else {
+            return match state.stack.last() {
+                Some(Frame::Explore { .. }) => Flow::Exploring,
+                Some(Frame::Story { .. }) => unreachable!(),
+                None => Flow::Ended,
+            };
+        };
+
+        let Some(step) = state.current.steps.get(here).cloned() else {
+            // Ran off the end of a scene: treat as `End`.
+            if state.pop(script) {
+                continue;
+            }
+            return Flow::Ended;
         };
 
         match step {
             Step::Background { image } => {
                 stage.background = Some(image);
-                state.step += 1;
+                state.set_story_step(here + 1);
             }
             Step::Show { character, slot } => {
                 stage.characters.insert(slot, character);
-                state.step += 1;
-            }
-            Step::Set { flag } => {
-                state.flags.insert(flag, 1);
-                state.step += 1;
-            }
-            Step::Clear { flag } => {
-                state.flags.insert(flag, 0);
-                state.step += 1;
-            }
-            Step::Add { flag, delta } => {
-                *state.flags.entry(flag).or_insert(0) += delta;
-                state.step += 1;
-            }
-            Step::JumpIf { condition, target } => {
-                if condition.holds(&state.flags) {
-                    state.scene = target;
-                    state.current = (script.scene_of)(target);
-                    state.step = 0;
-                } else {
-                    state.step += 1;
-                }
+                state.set_story_step(here + 1);
             }
             Step::Hide { slot } => {
                 stage.characters.remove(&slot);
-                state.step += 1;
+                state.set_story_step(here + 1);
             }
             Step::Music { track } => {
                 stage.music = track;
-                state.step += 1;
+                state.set_story_step(here + 1);
             }
-            Step::JumpTo(target) => {
-                state.scene = target;
-                state.current = (script.scene_of)(target);
-                state.step = 0;
+            Step::Set { flag } => {
+                state.flags.insert(flag, 1);
+                state.set_story_step(here + 1);
+            }
+            Step::Clear { flag } => {
+                state.flags.insert(flag, 0);
+                state.set_story_step(here + 1);
+            }
+            Step::Add { flag, delta } => {
+                *state.flags.entry(flag).or_insert(0) += delta;
+                state.set_story_step(here + 1);
+            }
+            Step::GiveItem { item } => {
+                state.items.insert(item);
+                state.set_story_step(here + 1);
+            }
+            Step::TakeItem { item } => {
+                state.items.remove(&item);
+                state.set_story_step(here + 1);
+            }
+            Step::JumpIf { condition, target } => {
+                if condition.holds(&state.flags, &state.items) {
+                    state.enter_scene(target, script);
+                } else {
+                    state.set_story_step(here + 1);
+                }
+            }
+            Step::JumpTo(target) => state.enter_scene(target, script),
+            Step::Explore { place } => {
+                // Step past the Explore before pushing, so returning here
+                // resumes *after* it rather than looping straight back in.
+                state.set_story_step(here + 1);
+                state.push_place(place);
+                return Flow::Exploring;
             }
             Step::Say { speaker, text } => {
                 *line = CurrentLine {
@@ -471,8 +630,8 @@ pub fn advance<S: SceneKey>(
                     revealed: 0,
                     timer: 0.0,
                 };
-                state.step += 1;
-                return PlayMode::Revealing;
+                state.set_story_step(here + 1);
+                return Flow::Playing(PlayMode::Revealing);
             }
             Step::Narrate { text } => {
                 *line = CurrentLine {
@@ -481,12 +640,11 @@ pub fn advance<S: SceneKey>(
                     revealed: 0,
                     timer: 0.0,
                 };
-                state.step += 1;
-                return PlayMode::Revealing;
+                state.set_story_step(here + 1);
+                return Flow::Playing(PlayMode::Revealing);
             }
             Step::Choices(items) => {
-                // Only offer options whose condition holds — but keep each
-                // option's ORIGINAL index, because `take_choice` indexes into
+                // Keep each option's ORIGINAL index: `take_choice` indexes into
                 // the unfiltered list.
                 choices.items = items
                     .iter()
@@ -494,15 +652,77 @@ pub fn advance<S: SceneKey>(
                     .filter(|(_, c)| {
                         c.condition
                             .as_ref()
-                            .is_none_or(|cond| cond.holds(&state.flags))
+                            .is_none_or(|cond| cond.holds(&state.flags, &state.items))
                     })
                     .map(|(i, c)| (c.text.clone(), i))
                     .collect();
-                // Deliberately does NOT advance `step`: the branch is resolved
-                // by the player's answer, which replaces the scene outright.
-                return PlayMode::AwaitingChoice;
+                // Deliberately does not step: the branch is resolved by the
+                // player's answer.
+                return Flow::Playing(PlayMode::AwaitingChoice);
             }
-            Step::End => return PlayMode::Finished,
+            Step::End => {
+                if !state.pop(script) {
+                    return Flow::Ended;
+                }
+            }
+        }
+    }
+}
+
+/// Applies a place option: move, call a scene, or leave.
+pub fn take_option<S: SceneKey>(
+    index: usize,
+    state: &mut StoryState<S>,
+    script: &Script<S>,
+    places: &Places,
+    scene_of_name: impl Fn(&str) -> Option<S>,
+) -> Flow {
+    let Some(place_id) = state.current_place().map(str::to_string) else {
+        return Flow::Exploring;
+    };
+    let Some(option) = places
+        .get(&place_id)
+        .and_then(|p| p.options.get(index))
+        .cloned()
+    else {
+        return Flow::Exploring;
+    };
+
+    // Re-check the guard: a button can outlive the state that offered it.
+    if !option
+        .condition
+        .as_ref()
+        .is_none_or(|c| c.holds(&state.flags, &state.items))
+    {
+        return Flow::Exploring;
+    }
+
+    match option.effect {
+        Effect::GoTo(target) => {
+            // Replaces the frame rather than pushing: walking between rooms is
+            // not recursion, and pushing would make `Leave` unwind one room at
+            // a time.
+            if let Some(Frame::Explore { place }) = state.stack.last_mut() {
+                *place = target;
+            }
+            Flow::Exploring
+        }
+        Effect::Call(scene_name) => match scene_of_name(&scene_name) {
+            Some(id) => {
+                state.call_scene(id, script);
+                Flow::Playing(PlayMode::Revealing)
+            }
+            None => Flow::Exploring,
+        },
+        Effect::Leave => {
+            if state.pop(script) {
+                match state.stack.last() {
+                    Some(Frame::Explore { .. }) => Flow::Exploring,
+                    _ => Flow::Playing(PlayMode::Revealing),
+                }
+            } else {
+                Flow::Ended
+            }
         }
     }
 }
@@ -513,7 +733,10 @@ pub fn take_choice<S: SceneKey>(
     state: &mut StoryState<S>,
     script: &Script<S>,
 ) -> bool {
-    let Some(Step::Choices(items)) = state.current.steps.get(state.step).cloned() else {
+    let Some(here) = state.story_step() else {
+        return false;
+    };
+    let Some(Step::Choices(items)) = state.current.steps.get(here).cloned() else {
         return false;
     };
     let Some(choice) = items.get(index) else {
@@ -524,12 +747,12 @@ pub fn take_choice<S: SceneKey>(
     if !choice
         .condition
         .as_ref()
-        .is_none_or(|c| c.holds(&state.flags))
+        .is_none_or(|c| c.holds(&state.flags, &state.items))
     {
         return false;
     }
-    state.scene = choice.target;
-    state.current = (script.scene_of)(choice.target);
-    state.step = 0;
+    // A branch replaces the current scene rather than pushing: choosing is not
+    // calling, so there is nothing to return to.
+    state.enter_scene(choice.target, script);
     true
 }

@@ -1,0 +1,14 @@
+// Sets a flag that unlocks an option in a different place — the exploration
+// equivalent of a branch condition.
+(
+  steps: [
+    Background("backgrounds/mountains.webp"),
+    Set("read_cairn"),
+    Narrate(r#"Someone has cut a line of shallow marks into the top stone. Not letters. Tallies."#),
+    Say(speaker: "mira", text: r#"Six hundred and eleven."#),
+    Say(speaker: "golem", text: r#"I did not cut those."#),
+    Say(speaker: "mira", text: r#"...Then who was counting you?"#),
+    Narrate(r#"The last mark points down, over the edge, toward a ledge she had not noticed."#),
+    End,
+  ],
+)

@@ -1,0 +1,12 @@
+// Called from a place. `End` returns to the ridge rather than ending the game —
+// that is the control stack doing its job.
+(
+  steps: [
+    Background("backgrounds/mountains.webp"),
+    Say(speaker: "mira", text: r#"You said you'd carry me over. Do you actually know the way, or are we both guessing?"#),
+    Say(speaker: "golem", text: r#"I know every way. I have had six hundred years and nothing to walk them with."#),
+    Say(speaker: "mira", text: r#"That's not a yes."#),
+    Say(speaker: "golem", text: r#"It is the closest thing to one you will get above the cloud line."#),
+    End,
+  ],
+)

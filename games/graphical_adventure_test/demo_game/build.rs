@@ -43,6 +43,9 @@ enum RawStep {
     Set(String),
     Clear(String),
     Add { flag: String, delta: i32 },
+    GiveItem(String),
+    TakeItem(String),
+    Explore(String),
     End,
 }
 
@@ -53,6 +56,35 @@ struct RawChoice {
     target: String,
     #[serde(default)]
     condition: Option<Condition>,
+}
+
+// --- places ---------------------------------------------------------------
+
+#[derive(serde::Deserialize)]
+struct RawPlace {
+    background: String,
+    #[serde(default)]
+    music: Option<String>,
+    #[allow(dead_code)]
+    #[serde(default)]
+    caption: Option<String>,
+    options: Vec<RawPlaceOption>,
+}
+
+#[derive(serde::Deserialize)]
+struct RawPlaceOption {
+    #[allow(dead_code)]
+    label: String,
+    effect: RawEffect,
+    #[serde(default)]
+    condition: Option<Condition>,
+}
+
+#[derive(serde::Deserialize)]
+enum RawEffect {
+    GoTo(String),
+    Call(String),
+    Leave,
 }
 
 #[derive(serde::Deserialize)]
@@ -223,9 +255,29 @@ fn main() {
         ));
     }
 
+    // ---- places -----------------------------------------------------------
+
+    let places_dir = assets.join("places");
+    let mut places: BTreeMap<String, (PathBuf, String, RawPlace)> = BTreeMap::new();
+    if places_dir.is_dir() {
+        for entry in std::fs::read_dir(&places_dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("ron") {
+                continue;
+            }
+            let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
+            let text = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| fail(&format!("cannot read {}: {e}", path.display())));
+            let parsed: RawPlace = ron::from_str(&text)
+                .unwrap_or_else(|e| fail(&format!("{}: RON parse error: {e}", path.display())));
+            places.insert(stem, (path, text, parsed));
+        }
+    }
+
     // ---- validation -------------------------------------------------------
 
     let known: BTreeSet<&String> = scenes.keys().collect();
+    let known_places: BTreeSet<&String> = places.keys().collect();
 
     // Flags written anywhere vs flags read anywhere. Comparing the two is what
     // catches a mistyped flag name — the failure mode a string-keyed system
@@ -289,6 +341,15 @@ fn main() {
                 RawStep::Say { speaker, .. } => check_cast(speaker, "speaker"),
                 RawStep::JumpTo(target) => check_target(target),
                 RawStep::JumpIf { target, .. } => check_target(target),
+                RawStep::Explore(place) => {
+                    if !known_places.contains(place) {
+                        fail(&format!(
+                            "{where_}: explores `{place}`, but there is no places/{place}.ron. \
+                             Known places: {:?}",
+                            known_places.iter().map(|s| s.as_str()).collect::<Vec<_>>()
+                        ));
+                    }
+                }
                 RawStep::Choices(items) => {
                     if items.is_empty() {
                         fail(&format!("{where_}: a Choices step must offer at least one option"));
@@ -311,10 +372,100 @@ fn main() {
                 | RawStep::Set(_)
                 | RawStep::Clear(_)
                 | RawStep::Add { .. }
+                | RawStep::GiveItem(_)
+                | RawStep::TakeItem(_)
                 | RawStep::End => {}
             }
         }
         let _ = stem;
+    }
+
+    // Places: assets, targets, and conditions.
+    for (stem, (path, _, place)) in &places {
+        let where_ = format!("{} (place `{stem}`)", path.display());
+        check_asset_at(&assets, &place.background, &where_);
+        if let Some(track) = &place.music {
+            check_asset_at(&assets, track, &where_);
+        }
+        if place.options.is_empty() {
+            fail(&format!("{where_}: a place must offer at least one option"));
+        }
+        for (i, option) in place.options.iter().enumerate() {
+            let w = format!("{where_} option {i}");
+            match &option.effect {
+                RawEffect::GoTo(target) => {
+                    if !known_places.contains(target) {
+                        fail(&format!(
+                            "{w}: goes to `{target}`, but there is no places/{target}.ron. \
+                             Known places: {:?}",
+                            known_places.iter().map(|s| s.as_str()).collect::<Vec<_>>()
+                        ));
+                    }
+                }
+                RawEffect::Call(scene) => {
+                    if !known.contains(scene) {
+                        fail(&format!(
+                            "{w}: calls scene `{scene}`, but there is no scenes/{scene}.ron. \
+                             Known scenes: {:?}",
+                            known.iter().map(|s| s.as_str()).collect::<Vec<_>>()
+                        ));
+                    }
+                }
+                RawEffect::Leave => {}
+            }
+            if let Some(cond) = &option.condition {
+                let mut v = Vec::new();
+                cond.flags_read(&mut v);
+                flags_read.extend(v.into_iter().map(|f| (f, w.clone())));
+            }
+        }
+        // A place with no way out would trap the player.
+        if !place
+            .options
+            .iter()
+            .any(|o| matches!(o.effect, RawEffect::GoTo(_) | RawEffect::Leave) && o.condition.is_none())
+        {
+            fail(&format!(
+                "{where_}: has no unconditional way out. Add a GoTo or Leave option \
+                 without a condition, or the player can be stranded here."
+            ));
+        }
+    }
+
+    // Every scene must establish its own background before it says anything.
+    //
+    // A scene can be entered by several routes — jumped to, or called from a
+    // place — and a phase change clears the visible stage. A scene that relies
+    // on inheriting whatever was on screen therefore renders blank down some
+    // paths and fine down others, which is exactly the kind of bug that only
+    // shows up in one branch.
+    for (stem, (path, _, scene)) in &scenes {
+        let mut background_at = None;
+        let mut first_blocking = None;
+        for (i, step) in scene.steps.iter().enumerate() {
+            match step {
+                RawStep::Background(_) if background_at.is_none() => background_at = Some(i),
+                RawStep::Say { .. } | RawStep::Narrate(_) | RawStep::Choices(_)
+                    if first_blocking.is_none() =>
+                {
+                    first_blocking = Some(i)
+                }
+                _ => {}
+            }
+        }
+        match (background_at, first_blocking) {
+            (None, Some(_)) => fail(&format!(
+                "{}: scene `{stem}` never sets a Background, so it renders blank when \
+                 entered after a phase change. Add `Background(\"...\")` as its first step.",
+                path.display()
+            )),
+            (Some(b), Some(f)) if b > f => fail(&format!(
+                "{}: scene `{stem}` sets its Background at step {b}, after it starts \
+                 speaking at step {f}. Move it before the first line.",
+                path.display()
+            )),
+            _ => {}
+        }
     }
 
     for (flag, where_) in &flags_read {
@@ -327,10 +478,30 @@ fn main() {
         }
     }
 
-    // Reachability: content nobody can ever see is almost always a mistake.
+    // Reachability across the COMBINED graph: scenes reach places via `Explore`,
+    // places reach scenes via `Call` and each other via `GoTo`. Walking them
+    // separately would miss content only reachable by crossing between them.
     let mut seen = BTreeSet::new();
+    let mut seen_places: BTreeSet<String> = BTreeSet::new();
     let mut queue = vec![START_STEM.to_string()];
-    while let Some(stem) = queue.pop() {
+    let mut place_queue: Vec<String> = Vec::new();
+
+    loop {
+        while let Some(place) = place_queue.pop() {
+            if !seen_places.insert(place.clone()) {
+                continue;
+            }
+            if let Some((_, _, p)) = places.get(&place) {
+                for option in &p.options {
+                    match &option.effect {
+                        RawEffect::GoTo(t) => place_queue.push(t.clone()),
+                        RawEffect::Call(s) => queue.push(s.clone()),
+                        RawEffect::Leave => {}
+                    }
+                }
+            }
+        }
+        let Some(stem) = queue.pop() else { break };
         if !seen.insert(stem.clone()) {
             continue;
         }
@@ -344,6 +515,7 @@ fn main() {
                 match step {
                     RawStep::JumpTo(t) => queue.push(t.clone()),
                     RawStep::JumpIf { target, .. } => queue.push(target.clone()),
+                    RawStep::Explore(p) => place_queue.push(p.clone()),
                     RawStep::Choices(items) => {
                         queue.extend(items.iter().map(|c| c.target.clone()))
                     }
@@ -356,6 +528,8 @@ fn main() {
                     | RawStep::Set(_)
                     | RawStep::Clear(_)
                     | RawStep::Add { .. }
+                    | RawStep::GiveItem(_)
+                    | RawStep::TakeItem(_)
                     | RawStep::End => {}
                 }
             }
@@ -369,6 +543,16 @@ fn main() {
     if !unreachable.is_empty() {
         fail(&format!(
             "these scenes are unreachable from `{START_STEM}`: {unreachable:?}"
+        ));
+    }
+    let orphan_places: Vec<&str> = places
+        .keys()
+        .filter(|p| !seen_places.contains(*p))
+        .map(|s| s.as_str())
+        .collect();
+    if !orphan_places.is_empty() {
+        fail(&format!(
+            "these places are unreachable from `{START_STEM}`: {orphan_places:?}"
         ));
     }
 
@@ -421,6 +605,16 @@ fn main() {
         ));
     }
     out.push_str("        }\n    }\n}\n");
+
+    // Places are keyed by string rather than an enum: unlike scenes, nothing in
+    // Rust references a place by name, so an enum would buy no checking that
+    // build.rs does not already provide.
+    out.push_str("\npub const PLACE_SOURCES: &[(&str, &str)] = &[\n");
+    for (stem, (path, _, _)) in &places {
+        let p = path.to_string_lossy().replace('\\', "\\\\");
+        out.push_str(&format!("    (\"{stem}\", include_str!(\"{p}\")),\n"));
+    }
+    out.push_str("];\n");
 
     let dest = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("scenes_generated.rs");
     std::fs::write(&dest, out).unwrap_or_else(|e| fail(&format!("cannot write generated file: {e}")));

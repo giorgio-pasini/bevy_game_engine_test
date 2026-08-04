@@ -1,5 +1,6 @@
 (
   steps: [
+    Background("backgrounds/mountains.webp"),
     Add(flag: "trust", delta: 2),
 
     Say(speaker: "mira", text: r#"What happens to you if nobody ever does?"#),

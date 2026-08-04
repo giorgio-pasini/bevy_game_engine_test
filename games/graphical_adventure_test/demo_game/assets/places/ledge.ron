@@ -1,0 +1,14 @@
+(
+  background: "backgrounds/mountains.webp",
+  caption: Some("A ledge, barely wide enough to stand on"),
+  options: [
+    // Conditional: only offered once the cairn has been read. Stage 2's
+    // demonstration — the option simply is not there beforehand.
+    // Available only after reading the cairn, and only until it is found.
+    (label: "Look for the marked stone the cairn described",
+     effect: Call("ledge_find"),
+     condition: Some(All([IsSet("read_cairn"), IsNotSet("found_gear")]))),
+    (label: "Climb back up",
+     effect: GoTo("ridge")),
+  ],
+)
