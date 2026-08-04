@@ -197,6 +197,41 @@ accumulate faster than they are consumed.
 Be honest about the boundary: this validates content, not the engine. A UI that
 fails to redraw passes it happily.
 
+### Test the real app headlessly — it is the only layer that sees engine bugs
+`[bevy]` `[testing]` — **measured**, Bevy 0.19.0
+
+Content validation and model walks cannot see a view that fails to draw, a state
+machine that loops, or audio that stops. Build the **actual** `App` with the
+actual plugins, drive it, and assert what a player would notice.
+
+```rust
+App::new()
+    .add_plugins(MinimalPlugins)
+    .add_plugins(AssetPlugin::default())
+    .add_plugins(StatesPlugin)
+    .add_plugins(bevy::input::InputPlugin)
+    .init_asset::<Image>()
+    .init_asset::<AudioSource>()
+    .add_plugins(YourGamePlugin { .. });
+```
+
+No window and no GPU. Systems needing a window find none and return early.
+Run `app.update()` a few times so state transitions apply, then query the world:
+*are there option buttons?* is a better assertion than any amount of internal
+state.
+
+> The hard part is knowing which plugin supplies which resource. `MinimalPlugins`
+> carries no input, so every system reading the keyboard failed with
+> `Res<ButtonInput<KeyCode>> failed validation: Resource does not exist`.
+> Register asset types by hand with `init_asset` rather than pulling in render
+> plugins.
+>
+> Measured: five such tests run in 0.07s and cover two bugs that had already
+> shipped and been found by hand.
+
+Verify them the same way as any other guard: break the thing they watch, confirm
+they fail, revert.
+
 ### Write validation tests for what the compiler cannot check
 `[rust]` `[ai-workflow]` — **measured**
 
@@ -295,6 +330,42 @@ codec or subsystem is available.
 ---
 
 ## Working with the AI
+
+### Test the documentation against the code
+`[ai-workflow]` `[testing]` — **measured**
+
+Documentation drifts faster than anyone expects, and an assistant trusts it
+completely — so stale docs actively cause wrong work rather than merely failing
+to help. Two cheap tests catch most of it:
+
+- **every path a document mentions must resolve on disk** (try the bases your
+  documents actually use: their own directory, the repo root, a reference
+  checkout);
+- **every `Enum::Variant` a document names must exist**, parsed out of the real
+  source rather than hardcoded.
+
+> Measured: 0.08s, and they immediately caught a moved file and a renamed
+> variant when drift was introduced deliberately to check they fired.
+
+Guard the guard: assert the parse actually found your enums. A parser that
+silently matches nothing passes forever.
+
+They cannot catch a document that is *wrong about why* — only one that names
+something gone. In practice that is most of the drift, and the rest needs the
+discipline below rather than a test.
+
+### Write documentation after the work lands, not during
+`[ai-workflow]` — **confirmed**
+
+Three times in one session a document described work still in progress, and once
+a journal declared a feature outstanding *after it had been built* — which would
+have led the next session to build it twice.
+
+Once code exists, **the code is authoritative**. When an implementation diverges
+from a design sketch, mark the sketch superseded, state exactly how it differs,
+and point at the file holding the truth. Keep the original reasoning visible:
+"we considered that, here is why we chose otherwise" is the most valuable thing
+a project's documentation carries.
 
 ### Documentation outside the AI's load path does not exist
 `[ai-workflow]` — **confirmed**

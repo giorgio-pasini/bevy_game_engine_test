@@ -27,8 +27,9 @@ A missing `C:\Users\giorg\.cargo` is expected. Do not "fix" it by reinstalling.
 
 ## Full rebuilds are heavy — don't trigger them casually
 
-Dependencies build at `opt-level = 3`, so a *full* rebuild compiles 532 crates
-optimized. On this 6-core / 32 GB laptop the first one took 21m42s and froze the
+Dependencies build at `opt-level = 3`, so a *full* rebuild compiles the whole
+engine graph optimized. (It was 532 crates on Bevy's defaults; the workspace now
+pins an explicit feature set, so the exact figure moves — the cost does not.) On this 6-core / 32 GB laptop the first one took 21m42s and froze the
 machine outright until parallelism was capped to `jobs = 4` in
 `..\.cargo\config.toml`. Treat a full rebuild as a deliberate, announced action.
 

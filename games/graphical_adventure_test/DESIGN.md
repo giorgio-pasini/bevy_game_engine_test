@@ -196,6 +196,19 @@ forking the whole engine.
 
 ### 2.3 Data model
 
+> **PARTLY SUPERSEDED.** These sketches predate the implementation and differ
+> from it in three ways. The *shape* is still right; the details are not. Read
+> `vn_core/src/story.rs` for the truth.
+>
+> - `Say`/`Narrate` carry their prose **inline** as `String`, not a `TextKey`.
+>   Keys survive only for menu chrome and the future localisation pipeline
+>   (2026-08-01).
+> - `StoryState` is a **control stack** (`Vec<Frame<S>>`) plus flags and items,
+>   not a single scene/step cursor (2026-08-04).
+> - `Step` has grown `Explore`, `JumpIf`, `Set`/`Clear`/`Add`,
+>   `GiveItem`/`TakeItem`, and characters are named by **cast id** rather than
+>   image path.
+
 Illustrative sketches. **These have not been compiled** — treat them as intent,
 and verify against Bevy 0.19 while implementing.
 
@@ -578,13 +591,26 @@ be silent and error-prone.
 
 Each milestone ends in something runnable. Never integrate big-bang.
 
+> **STATUS as of 2026-08-04.** Done: 1 (workspace), 2 (data model — now RON files
+> plus a `build.rs` generator), 3 (stage), 4 (dialogue and typewriter),
+> 6 (choices and branching), 7 (audio), 13 (validation — build guards, a
+> content-graph walk, and headless app tests).
+> Superseded: 5 (RON localisation — prose is inline instead).
+> Outstanding: 8 (save/load, now across a control stack), 9 (backlog, auto,
+> skip), 10 (settings), 11 (transitions and effects), 12 (gallery, achievements,
+> voice).
+>
+> **Added since, not in this table:** the exploration phase — control stack,
+> places, exits, actions, inventory conditions. Its own staging lives in the
+> journal entry for 2026-08-04.
+
 | # | Milestone | Done when |
 | --- | --- | --- |
 | 1 | Workspace setup: `vn_core` + `demo_game`, added to `games/Cargo.toml` members | `cargo run -p demo_game --features dev` opens a window |
 | 2 | Data model + `scene()` match + one hard-coded scene | A unit test walks the scene without panicking |
 | 3 | Stage: background and character sprites reconciled from story state | A static scene renders correctly |
 | 4 | Dialogue box + typewriter + advance on input | A linear scene is readable start to finish |
-| 5 | Localisation: text keys resolved from RON | Switching language changes all on-screen text |
+| ~~5~~ | ~~Localisation: text keys resolved from RON~~ — **superseded 2026-08-01**: prose is authored inline in the scene files, so localisation becomes a string-*extraction* step rather than an authoring burden. Not built. | — |
 | 6 | Choices and branching | The demo has two reachable endings |
 | 7 | Audio: BGM crossfade, SFX, volume buses | Music changes across scenes without a pop |
 | 8 | Save/load with silent replay | Save mid-scene, restart the process, reload, stage identical; save→load→save round-trips byte-identically |
@@ -680,12 +706,17 @@ through one styling helper.
 4. Map hotspots with colour-keyed lookup images
 5. Save/load across the control stack
 
-### Headless app tests
+### ~~Headless app tests~~ — done 2026-08-04
 
-Every engine bug so far — flicker, dead ends, silent music, blank screens — was
-found by a human playing, and none were visible to the build, the tests or the
-exit code. Tests that run the real Bevy app headlessly and assert invariants
-("in `Exploring`, at least one option button exists") would close that gap.
+Built: `demo_game/src/app_tests.rs`, five tests running the real `App` headlessly
+in 0.07s. They assert the app reaches the menu, that entering `Playing` leaves a
+line *and* a background on screen, that a place draws its options, that returning
+from a called scene redraws them, and that music survives a phase change.
+
+Verified by breaking the view and confirming they fail.
+
+Extend these whenever a bug is found by playing — that is the signal the layer
+missed something.
 
 ## Part 9 — Open risks
 

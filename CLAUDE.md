@@ -24,9 +24,15 @@ bevy/                          Bevy 0.19.0 reference clone — READ-ONLY, NOT in
 bevytest_documentation/        General findings (this is the research output)
 games/                         Cargo workspace
   snake/                       2D game — see its CLAUDE.md
-  graphical_adventure_test/    Visual novel — see its DESIGN.md
-    vn_core/                   engine as plugins
+  graphical_adventure_test/    Visual novel + point-and-click — see its DESIGN.md
+    vn_core/                   engine as plugins (story, places, presentation)
     demo_game/                 demo consuming it
+      assets/scenes/*.ron        narrative, prose inline
+      assets/places/*.ron        explorable locations
+      assets/cast.ron            character id -> name + image
+      assets/presentation.ron    visual tuning; edit and rebuild, no Rust
+      build.rs                   validates all of the above at BUILD time
+      src/app_tests.rs           headless tests of the real Bevy app
   target-shared/               shared build cache (~20 GB)
 test_images/                   source art
 ```

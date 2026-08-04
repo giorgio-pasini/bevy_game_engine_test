@@ -3,6 +3,10 @@
 //! Run with: `cargo run -p demo_game --features dev`
 
 mod scenes;
+#[cfg(test)]
+mod app_tests;
+#[cfg(test)]
+mod doc_tests;
 
 use bevy::prelude::*;
 use bevy::window::WindowResolution;

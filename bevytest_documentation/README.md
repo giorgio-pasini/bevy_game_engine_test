@@ -65,6 +65,25 @@ rather than silent.
 46s" is useful; "builds are slow" is not, and cannot be checked for regression
 later.
 
+## Two rules learned by breaking them
+
+**Write the documentation after the work lands, not while it is in flight.**
+Twice the docs described work that was still in progress, and once the journal
+actively said a feature was outstanding *after it had been built* — which would
+have led a future session to build it twice. A document that runs ahead of
+reality is worse than no document, because it is trusted.
+
+**Once code exists, the code is authoritative.** Design sketches are provisional
+by nature: they are written to decide what to build, and the build teaches you
+things. When an implementation diverges from a sketch, do **not** quietly leave
+the sketch standing — mark it superseded, say exactly how it differs, and point
+at the file that holds the truth.
+
+Keep the original reasoning visible rather than deleting it. A future decision
+should be measurable against the argument it overturns, and "we already
+considered that, here is why we chose otherwise" is the most valuable thing this
+documentation carries.
+
 ## Maintaining these
 
 At the end of a working session, update all three:

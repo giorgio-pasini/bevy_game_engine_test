@@ -85,9 +85,9 @@ place with no unconditional exit.
 
 | | |
 | --- | --- |
-| Scenes / places / endings | 24 / 3 / 4 |
-| Build-time guards | 7, each verified by deliberate breakage |
-| Tests | 7, including the exhaustive walk (<1 ms) |
+| Scenes / places / endings | 21 / 3 / 4 |
+| Build-time guards | ~15 distinct checks; the new ones verified by deliberate breakage |
+| Tests | 14 — 7 content, 5 headless app, 2 documentation-alignment |
 | Incremental rebuild | ~25–40s |
 
 ### Changed in the other documents
@@ -97,11 +97,57 @@ place with no unconditional exit.
 - Antipatterns: *caching what the world already knows*, with the five-bug table.
 - `DESIGN.md`: rescoped; Part 6's seams are now implemented architecture.
 
+### Later the same day: the third layer was built
+
+Five **headless app tests** now run the real Bevy `App` — `MinimalPlugins` plus
+`AssetPlugin`, `StatesPlugin`, `InputPlugin` and hand-registered `Image` and
+`AudioSource` — in 0.07s, with no window and no GPU.
+
+They cover the two engine bugs that had already shipped and been found by hand:
+returning from a called scene must redraw the place, and music must survive a
+phase change. Verified by breaking the view and confirming both fail with *"the
+ridge offers four options but none were drawn"*, then reverting.
+
+The harness failed on its first run with
+`Res<ButtonInput<KeyCode>> failed validation: Resource does not exist` —
+`MinimalPlugins` carries no input. Knowing which plugin supplies which resource
+is the whole difficulty of headless Bevy testing, and `bevy/dev` naming the
+system and parameter is what made it a one-line fix.
+
+**Coverage now stands at four layers:** build-time guards, a content-graph walk,
+headless app tests, and a human playing. Every engine bug this session escaped
+the first two; the third now closes that gap.
+
+### And then: the documentation itself was found drifting
+
+Two audits, prompted by the user asking whether the docs matched the project,
+found **seven** misalignments between them — a roadmap listing finished
+milestones as pending, a data-model sketch describing an API that no longer
+existed, paths to moved files, wrong counts, and the journal declaring a built
+feature outstanding.
+
+The last of those is the worst kind: a future session would have rebuilt
+something that already existed.
+
+Two rules went into `README.md` — write documentation *after* the work lands,
+and treat code as authoritative once it exists — and two tests now enforce the
+mechanical half:
+
+- every path mentioned in a document must resolve on disk;
+- every `Enum::Variant` a document names must exist in `vn_core`.
+
+Both verified by introducing drift deliberately. They cannot catch a document
+that is *wrong about why* — only one that names something gone — but that was
+most of what the audits found.
+
+Worth noting the shape: this is the same failure as every engine bug this
+session. A record of the world diverging from the world. The fix was the same
+too — stop trusting the record, ask the source.
+
 ### Still open
 
-Headless tests that run the real app would have caught the dead ends and the
-flicker — the one gap the other layers cannot reach. Stages 3–5 (inventory, map
-hotspots, save/load) remain.
+Stages 3–5 (inventory in play, map hotspots, save/load across the stack), and
+greying out options already taken — see `DESIGN.md` Part 8b.
 
 ---
 
