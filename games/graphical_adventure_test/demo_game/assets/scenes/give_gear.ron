@@ -1,0 +1,24 @@
+// Consumes the item. `TakeItem` removes it, so the option that required it
+// disappears — no bookkeeping flag needed, the inventory is the state.
+(
+  steps: [
+    Background("backgrounds/mountains.webp"),
+
+    Narrate(r#"She holds it up. Small, filthy, and unmistakably his."#),
+
+    Say(speaker: "golem", text: r#"...Where."#),
+    Say(speaker: "mira", text: r#"Under a marked stone on the ledge. Wrapped, so it wouldn't corrode. Someone meant you to have it back."#),
+
+    Narrate(r#"He is quiet for long enough that she wonders whether she has broken something worse than a gear."#),
+
+    Say(speaker: "golem", text: r#"Put it in. Please. I find I cannot ask twice."#),
+
+    TakeItem("brass_gear"),
+    Set("gear_returned"),
+    Add(flag: "trust", delta: 3),
+
+    Narrate(r#"It seats with a sound like a held breath let go."#),
+
+    End,
+  ],
+)

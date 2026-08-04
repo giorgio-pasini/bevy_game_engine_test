@@ -92,6 +92,8 @@ enum Condition {
     IsSet(String),
     IsNotSet(String),
     AtLeast(String, i32),
+    HasItem(String),
+    LacksItem(String),
     All(Vec<Condition>),
     Any(Vec<Condition>),
 }
@@ -102,7 +104,16 @@ impl Condition {
             Condition::IsSet(k) | Condition::IsNotSet(k) | Condition::AtLeast(k, _) => {
                 out.push(k.clone())
             }
+            Condition::HasItem(_) | Condition::LacksItem(_) => {}
             Condition::All(cs) | Condition::Any(cs) => cs.iter().for_each(|c| c.flags_read(out)),
+        }
+    }
+
+    fn items_read(&self, out: &mut Vec<String>) {
+        match self {
+            Condition::HasItem(i) | Condition::LacksItem(i) => out.push(i.clone()),
+            Condition::IsSet(_) | Condition::IsNotSet(_) | Condition::AtLeast(_, _) => {}
+            Condition::All(cs) | Condition::Any(cs) => cs.iter().for_each(|c| c.items_read(out)),
         }
     }
 }
@@ -284,6 +295,10 @@ fn main() {
     // invites, and one no compiler can see.
     let mut flags_written: BTreeSet<String> = BTreeSet::new();
     let mut flags_read: Vec<(String, String)> = Vec::new();
+    // Same treatment for inventory: an item required somewhere must be granted
+    // somewhere, or the condition can never hold and the content is unreachable.
+    let mut items_given: BTreeSet<String> = BTreeSet::new();
+    let mut items_read: Vec<(String, String)> = Vec::new();
 
     for (stem, (path, _, scene)) in &scenes {
         for (i, step) in scene.steps.iter().enumerate() {
@@ -296,10 +311,16 @@ fn main() {
                 RawStep::Add { flag, .. } => {
                     flags_written.insert(flag.clone());
                 }
+                RawStep::GiveItem(i) => {
+                    items_given.insert(i.clone());
+                }
                 RawStep::JumpIf { condition, .. } => {
                     let mut v = Vec::new();
                     condition.flags_read(&mut v);
                     flags_read.extend(v.into_iter().map(|f| (f, where_.clone())));
+                    let mut w = Vec::new();
+                    condition.items_read(&mut w);
+                    items_read.extend(w.into_iter().map(|i| (i, where_.clone())));
                 }
                 RawStep::Choices(items) => {
                     for c in items {
@@ -307,6 +328,9 @@ fn main() {
                             let mut v = Vec::new();
                             cond.flags_read(&mut v);
                             flags_read.extend(v.into_iter().map(|f| (f, where_.clone())));
+                            let mut w = Vec::new();
+                            cond.items_read(&mut w);
+                            items_read.extend(w.into_iter().map(|i| (i, where_.clone())));
                         }
                     }
                 }
@@ -417,6 +441,9 @@ fn main() {
                 let mut v = Vec::new();
                 cond.flags_read(&mut v);
                 flags_read.extend(v.into_iter().map(|f| (f, w.clone())));
+                let mut items = Vec::new();
+                cond.items_read(&mut items);
+                items_read.extend(items.into_iter().map(|i| (i, w.clone())));
             }
         }
         // A place with no way out would trap the player.
@@ -465,6 +492,16 @@ fn main() {
                 path.display()
             )),
             _ => {}
+        }
+    }
+
+    for (item, where_) in &items_read {
+        if !items_given.contains(item) {
+            fail(&format!(
+                "{where_}: condition requires item `{item}`, which no scene ever grants. \
+                 Items granted somewhere: {:?}",
+                items_given.iter().collect::<Vec<_>>()
+            ));
         }
     }
 

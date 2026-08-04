@@ -6,6 +6,9 @@
     // exactly what the exhaustive walk caught.
     Set("found_gear"),
     Add(flag: "trust", delta: 1),
+    // The item itself, not just a flag: it can now be carried, required and
+    // consumed elsewhere.
+    GiveItem("brass_gear"),
     Narrate(r#"The marked stone comes away easily. Behind it, wrapped in oiled cloth, is a brass gear no bigger than her palm — and unmistakably the shape of the one seized in his chest."#),
     Say(speaker: "mira", text: r#"Someone left this here. For you. And then stopped coming."#),
     Say(speaker: "golem", text: r#"...Yes."#),

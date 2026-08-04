@@ -144,10 +144,42 @@ Worth noting the shape: this is the same failure as every engine bug this
 session. A record of the world diverging from the world. The fix was the same
 too — stop trusting the record, ask the source.
 
-### Still open
+### Stage 3 — inventory, in play
 
-Stages 3–5 (inventory in play, map hotspots, save/load across the stack), and
-greying out options already taken — see `DESIGN.md` Part 8b.
+A brass gear is found on the ledge (`GiveItem`), gates a new option on the ridge
+(`HasItem`), and is consumed when given to the golem (`TakeItem`).
+
+Cheap because of a decision taken when the exploration phase was scoped: items
+are **richer flags**, not a use-item-on-target matrix. Stage 3 was therefore
+content plus one build guard, not an engine feature.
+
+Worth noting there is no "already given" flag on that option. `TakeItem` removes
+the item, the condition stops holding, the option disappears. **The inventory is
+the state** — the same derive-don't-cache rule, applied to content instead of code.
+
+New guard, verified by breaking it: an item required by a condition must be
+granted somewhere, or the content is silently unreachable.
+
+```
+ridge.ron (place `ridge`) option 3: condition requires item `brass_gearr`,
+which no scene ever grants. Items granted somewhere: ["brass_gear"]
+```
+
+### Where to pick up
+
+**Next:** stage 4 (map hotspots, colour-keyed lookup images — needs the
+placeholder generator described in the plan) and stage 5 (save/load across the
+control stack, the real test of the architecture). Also greying out options
+already taken — `DESIGN.md` Part 8b, which notes it belongs in the profile
+rather than the save.
+
+**State:** all tests green — 7 content (including the exhaustive branch walk),
+5 headless app, 2 documentation alignment. Nothing in flight. Build ~25–40s;
+scene edits ~9s.
+
+*(Counts are stated by layer rather than as a total on purpose: totals drift
+every time a test is added, and nothing checks them. Run `cargo wt` for the
+number.)*
 
 ---
 

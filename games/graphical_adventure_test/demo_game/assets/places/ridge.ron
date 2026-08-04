@@ -7,6 +7,11 @@
     (label: "Walk up to the cairn",        effect: GoTo("cairn")),
     (label: "Climb down to the ledge",     effect: GoTo("ledge")),
     (label: "Ask the golem about the pass", effect: Call("pass_talk")),
+    // Requires carrying the gear found on the ledge — an item gating an action,
+    // which is the whole of the inventory model.
+    (label: "Hold out the brass gear",
+     effect: Call("give_gear"),
+     condition: Some(HasItem("brass_gear"))),
     (label: "Go on over the peaks",        effect: Leave),
   ],
 )
