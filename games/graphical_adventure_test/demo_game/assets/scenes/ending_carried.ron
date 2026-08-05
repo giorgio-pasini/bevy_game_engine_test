@@ -1,6 +1,11 @@
 (
   steps: [
     Background("backgrounds/mountains.webp"),
+    // Staged, then cleared: the `Hide` is only meaningful over a cast this scene
+    // established itself. Relying on the previous scene's staging made him
+    // vanish or linger depending on the route taken here.
+    Show(character: "mira", slot: Left),
+    Show(character: "golem", slot: Right),
     Hide(slot: Right),
 
     Narrate(r#"He carries her over the peaks by morning, exactly as promised."#),

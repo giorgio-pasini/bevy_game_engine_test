@@ -253,6 +253,47 @@ already knows, delete it and ask the world.**
 
 ---
 
+## Fixing the instance and declaring the class fixed
+
+**What it looks like:** a bug is diagnosed properly, the underlying rule is
+articulated, the content is corrected everywhere it applies, a build-time guard
+is added so it cannot return, and the finding is written into the guide, the
+antipatterns and the journal. Textbook. And the sibling case, one field away in
+the same struct, is never looked at.
+
+**Why it bites:** understanding a bug feels like finishing it. The guard that
+gets written covers the instance that was reported, and its existence is then
+taken as evidence that the whole category is handled — by the same person who
+would otherwise have gone looking.
+
+**Evidence.** `Stage` in this project holds three things:
+
+| | Rule it needed | When it got one |
+| --- | --- | --- |
+| `background` | re-established by every scene | 2026-08-04, after 20 scenes rendered blank |
+| `music` | ambient, persists across phases | 2026-08-04, same session |
+| `characters` | re-established by every scene | 2026-08-05, after the user reported it |
+
+Twenty-one of twenty-two scenes never staged a character; only the opening scene
+did. Within a straight narrative run this is invisible, because a jump leaves the
+stage alone — the cast simply persists. It breaks the moment a phase change
+clears the stage, which is exactly the feature that had just been built.
+
+The build-time guard that had been written the day before validated
+`Background`. Adding the `Say`-speaker-must-be-on-stage guard alongside it was
+nine lines and caught every one of the twenty-one scenes immediately.
+
+**Cost:** a full session of playtesting on a game whose characters were absent
+for most of its running time, and a second bug report for a failure that had
+already been fully understood and documented.
+
+**Instead:** when a rule emerges, enumerate what else it governs before writing
+the guard — the enumeration is usually the fields of one struct or the variants
+of one enum, and it takes a minute. Then write the guard to cover the category
+rather than the case.
+
+---
+
 ## Using `_ => {}` in code that must handle every variant
 
 **What it looks like:** a `match` over a content enum that only cares about a few

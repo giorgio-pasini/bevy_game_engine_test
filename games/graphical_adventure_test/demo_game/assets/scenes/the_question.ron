@@ -1,6 +1,11 @@
 (
   steps: [
     Background("backgrounds/mountains.webp"),
+    // Every scene stages its own cast: a scene is entered by several routes, and
+    // a phase change clears the stage. Inheriting whoever happened to be on
+    // screen renders correctly down one path and empty down the others.
+    Show(character: "mira", slot: Left),
+    Show(character: "golem", slot: Right),
     Add(flag: "trust", delta: 2),
 
     Say(speaker: "mira", text: r#"What happens to you if nobody ever does?"#),

@@ -1,0 +1,18 @@
+[package]
+name = "mapgen"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Deliberately NOT a member of games/Cargo.toml, and this empty table is what
+# detaches it. Cargo resolves features over the set of packages it is building,
+# so a member pulling `image` into the normal dependency graph could change the
+# features on the copy Bevy already uses — and a feature change to anything under
+# Bevy costs a full engine rebuild. An excluded crate cannot do that: it resolves
+# on its own, and only when it is run.
+[workspace]
+
+[dependencies]
+# Pinned to the version already in games/Cargo.lock so it resolves from the
+# registry cache rather than fetching a second copy of the source.
+image = { version = "=0.25.10", default-features = false, features = ["png"] }

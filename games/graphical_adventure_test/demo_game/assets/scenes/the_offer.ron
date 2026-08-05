@@ -1,6 +1,11 @@
 (
   steps: [
     Background("backgrounds/mountains.webp"),
+    // Every scene stages its own cast: a scene is entered by several routes, and
+    // a phase change clears the stage. Inheriting whoever happened to be on
+    // screen renders correctly down one path and empty down the others.
+    Show(character: "mira", slot: Left),
+    Show(character: "golem", slot: Right),
     Say(speaker: "golem", text: r#"There is work in me that has gone unfinished for six hundred years. Gears that no longer turn. A name I can no longer pronounce."#),
     Say(speaker: "mira", text: r#"And you want me to what — reach in?"#),
     Say(speaker: "golem", text: r#"Mend me, and I will carry you over the peaks by morning. Refuse, and I will let you pass. But you will walk, and the walking is long."#),

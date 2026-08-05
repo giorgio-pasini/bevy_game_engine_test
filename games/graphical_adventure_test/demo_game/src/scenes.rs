@@ -112,11 +112,17 @@ mod tests {
     }
 
     /// Every asset the game can reach: backgrounds and music from steps,
-    /// character art from the cast (steps now name a cast id, not a path).
+    /// character art from the cast (steps now name a cast id, not a path), and
+    /// each place's background, music and hotspot lookup.
     fn walk() -> BTreeSet<String> {
         let mut assets = BTreeSet::new();
         for member in cast().0.values() {
             assets.insert(member.image.clone());
+        }
+        for place in places().0.values() {
+            assets.insert(place.background.clone());
+            assets.extend(place.music.clone());
+            assets.extend(place.lookup.clone());
         }
         for id in SceneId::ALL {
             for step in scene(*id).steps {

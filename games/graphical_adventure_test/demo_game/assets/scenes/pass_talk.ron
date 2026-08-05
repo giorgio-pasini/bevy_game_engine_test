@@ -3,6 +3,11 @@
 (
   steps: [
     Background("backgrounds/mountains.webp"),
+    // Every scene stages its own cast: a scene is entered by several routes, and
+    // a phase change clears the stage. Inheriting whoever happened to be on
+    // screen renders correctly down one path and empty down the others.
+    Show(character: "mira", slot: Left),
+    Show(character: "golem", slot: Right),
     Say(speaker: "mira", text: r#"You said you'd carry me over. Do you actually know the way, or are we both guessing?"#),
     Say(speaker: "golem", text: r#"I know every way. I have had six hundred years and nothing to walk them with."#),
     Say(speaker: "mira", text: r#"That's not a yes."#),

@@ -1,6 +1,11 @@
 (
   steps: [
     Background("backgrounds/mountains.webp"),
+    // Every scene stages its own cast: a scene is entered by several routes, and
+    // a phase change clears the stage. Inheriting whoever happened to be on
+    // screen renders correctly down one path and empty down the others.
+    Show(character: "mira", slot: Left),
+    Show(character: "golem", slot: Right),
     Music(Some("music/calm.ogg")),
 
     Narrate(r#"The bent wheel resists, complains, and finally gives. Something deep in the gold starts keeping time with her pulse."#),

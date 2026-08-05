@@ -11,6 +11,8 @@ and get rewritten freely; this file is what preserves the history behind them.
 
 | Date | Decision | Entry |
 | --- | --- | --- |
+| 2026-08-05 | Hotspots are options with a colour, audited against the actual pixels at build time | [2026-08-05](#2026-08-05) |
+| 2026-08-05 | The cast is re-established per scene, like the background — **not** persistent like music | [2026-08-05](#2026-08-05) |
 | 2026-08-04 | **Scope change**: pure VN → VN + point-and-click; control stack; every scene must set its own background | [2026-08-04](#2026-08-04) |
 | 2026-08-02 | Enable image codecs generously; cast as the speaker/sprite link; flags and conditions | [2026-08-02](#2026-08-02) |
 | 2026-08-01 | Scenes as RON data validated by `build.rs` — **supersedes** the 2026-07-30 authoring decision | [2026-08-01](#2026-08-01) |
@@ -20,6 +22,148 @@ and get rewritten freely; this file is what preserves the history behind them.
 | 2026-07-30 | Snapshot saves, not `bevy_world_serialization` | [2026-07-30](#2026-07-30) |
 | 2026-07-30 | Cargo workspace over independent projects sharing a target dir | [2026-07-30](#2026-07-30) |
 | 2026-07-30 | Rust toolchain and build cache on D:, not the system drive | [2026-07-30](#2026-07-30) |
+
+---
+
+## 2026-08-05
+
+### What happened
+
+Stage 4 of the exploration work: **map hotspots**. A place may name a lookup
+image whose flat colours identify clickable regions, so navigation can be
+"click the cairn on the map" rather than "press the third button".
+
+Mid-stage, the user reported that characters were missing from almost every
+scene. That turned out to be the more important finding of the day.
+
+### Decision: a hotspot is an option with a colour
+
+The alternative was a separate hotspot system with its own targets and its own
+conditions. Instead, `PlaceOption` gained one optional field:
+
+```ron
+(label: "The cairn on the shoulder", effect: GoTo("cairn"), region: Some((220, 60, 60)))
+```
+
+An option with a `region` is clicked on the picture; one without is drawn as a
+button; a place may hold both. Everything downstream — the condition re-check,
+the control stack, the flow routing — is untouched and shared. Buttons and
+hotspots now both write "the player picked option *n*" into one resource that a
+single system consumes.
+
+Sampling is in **normalised** coordinates, so a lookup image may be any
+resolution and only its aspect ratio must match. A 960x540 placeholder and
+finished 4K art are interchangeable with no data change.
+
+### Decision: audit the pixels at build time
+
+A colour-keyed map has failure modes that produce **silence**, never an error:
+the click just does nothing. `build.rs` now decodes the lookup and checks that
+every declared colour occurs, covers at least 0.1% of the image, that the
+encoding is lossless PNG, that the aspect is 16:9, that no two options share a
+colour, and — the one that matters most — that **no undeclared colour occurs at
+all**.
+
+That last check is the anti-aliasing guard. A soft-edged region is surrounded by
+a halo of blended colours, each of which is a dead pixel, around the outline of
+every hotspot. Verified by generating a deliberately soft lookup:
+
+```
+`maps/valley_lookup.png` contains 3 colour(s) matching no region:
+(30, 70, 110) x656, (110, 30, 30) x596, (120, 100, 40) x682.
+The usual cause is ANTI-ALIASING ...
+```
+
+All six new guards were verified by breaking them and reverting.
+
+### The bug the user found: the background rule's twin
+
+**21 of 22 scenes never staged a character.** Only the opening scene did; every
+other scene inherited whoever was already on screen.
+
+This is *exactly* the bug fixed the previous day for backgrounds, in the field
+next to it in the same struct. It survived because the audit stopped at the case
+that had been reported. Within a straight narrative run it is invisible — a jump
+leaves the stage alone, so the cast persists — and it breaks the instant a phase
+change clears the stage, which is the feature that had just been built.
+
+`Stage` holds three things, and each needed a decision that was only ever made
+for two of them:
+
+| | Category | Rule |
+| --- | --- | --- |
+| `background` | re-established | every scene sets its own |
+| `characters` | re-established | every scene stages its own — **new today** |
+| `music` | ambient | persists across phases, restored from state |
+
+The general form is now in the guide as *classify every piece of presentation
+state: re-established or ambient*. The test for which is: **can the code that
+rebuilds the screen work it out from where we are now?** A background can; a
+soundtrack cannot.
+
+Fixed in all 22 scenes, plus a guard: a `Say` whose speaker was never `Show`n in
+that same scene fails the build. Nine lines, and it caught all 21 immediately.
+The message says what to do about a voice that is *meant* to be off-stage —
+because "deliberately absent" and "forgotten" must not look identical in the
+data.
+
+### Tooling notes worth keeping
+
+Two dependency decisions that would normally be a full engine rebuild, and were
+not:
+
+- **`image` as a build-dependency** of the game crate, to decode lookup images.
+  Cargo's resolver 2/3 resolves build-dependencies separately from normal ones,
+  so the copy under Bevy is untouched. Measured: `image`, `png` and four small
+  leaves compiled; no `bevy_*` crate rebuilt; incremental build stayed at 38s.
+- **`tools/mapgen` is not a workspace member.** An empty `[workspace]` table in
+  its manifest detaches it, so its `image` dependency cannot enter the set cargo
+  unifies features over. It still shares the build cache through
+  `games/.cargo/config.toml`.
+
+The generator emits the map picture and its lookup from **one** set of shape
+predicates at two resolutions, so the two cannot disagree. When real art
+arrives, that guarantee moves to the build-time audit.
+
+### Numbers
+
+| | |
+| --- | --- |
+| Scenes / places / endings | 22 / 4 / 4 |
+| Build-time guards | ~22 distinct checks (6 new, each verified by breaking it) |
+| Tests | 16 — 7 content, 7 headless app, 2 documentation alignment |
+| Incremental rebuild | ~38s |
+| Placeholder art | 44 KB picture + 12 KB lookup, generated |
+
+### Changed in the other documents
+
+- Guide: *classify presentation state*; *validate the contents of binary
+  assets*; *generate paired assets from one definition*; *build-dependencies are
+  feature-isolated*; *keep tools out of the workspace*; *fix the class, then
+  find the siblings*; one-writer extended to input.
+- Antipatterns: *fixing the instance and declaring the class fixed*.
+- `DESIGN.md`: hotspots documented; stage 4 out of the backlog.
+
+### Where to pick up
+
+**Stage 5 — save/load across the control stack.** The design is already written
+(`DESIGN.md` Part 3): a snapshot of stack, flags and items, with the screen
+rebuilt by replaying **every frame from the bottom up**. `rebuild_stage` already
+does exactly that replay, so most of the work is serialisation and a
+save→load→save round-trip test.
+
+Also outstanding: greying out already-taken options (Part 8b — it belongs in the
+profile, not the save).
+
+**State:** all tests green — 7 content, 7 headless app, 2 documentation
+alignment. Nothing in flight. Run `cargo wt` for the current count rather than
+trusting this line.
+
+Stage 4 and the cast fix were **confirmed by playing**, not only by the checks:
+the map regions click where they look like they should, the hover label reads,
+and the characters are present again. Worth stating separately, because every
+engine bug in this project so far passed the automated layers and was found at
+this one.
 
 ---
 

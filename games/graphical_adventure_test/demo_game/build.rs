@@ -68,6 +68,8 @@ struct RawPlace {
     #[allow(dead_code)]
     #[serde(default)]
     caption: Option<String>,
+    #[serde(default)]
+    lookup: Option<String>,
     options: Vec<RawPlaceOption>,
 }
 
@@ -78,6 +80,18 @@ struct RawPlaceOption {
     effect: RawEffect,
     #[serde(default)]
     condition: Option<Condition>,
+    #[serde(default)]
+    region: Option<Rgb>,
+}
+
+/// Mirror of `vn_core::place::Rgb`.
+#[derive(serde::Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct Rgb(u8, u8, u8);
+
+impl std::fmt::Display for Rgb {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}, {}, {})", self.0, self.1, self.2)
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -165,7 +179,7 @@ const DECODABLE: &[&str] = &[
     "ogg", "mp3", "wav",
 ];
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[allow(dead_code)]
 enum Slot {
     Left,
@@ -337,9 +351,9 @@ fn main() {
                 _ => {}
             }
 
-            let mut check_asset = |rel: &str| check_asset_at(&assets, rel, &where_);
+            let check_asset = |rel: &str| check_asset_at(&assets, rel, &where_);
 
-            let mut check_target = |target: &String| {
+            let check_target = |target: &String| {
                 if !known.contains(target) {
                     fail(&format!(
                         "{where_}: jumps to `{target}`, but there is no `{target}.ron`. \
@@ -349,7 +363,7 @@ fn main() {
                 }
             };
 
-            let mut check_cast = |id: &String, what: &str| {
+            let check_cast = |id: &String, what: &str| {
                 if !cast.contains_key(id) {
                     fail(&format!(
                         "{where_}: {what} `{id}` is not in cast.ron. Known: {:?}",
@@ -446,6 +460,8 @@ fn main() {
                 items_read.extend(items.into_iter().map(|i| (i, w.clone())));
             }
         }
+        check_hotspots(&assets, &where_, place);
+
         // A place with no way out would trap the player.
         if !place
             .options
@@ -492,6 +508,44 @@ fn main() {
                 path.display()
             )),
             _ => {}
+        }
+    }
+
+    // A speaker must be standing on the stage its own scene built.
+    //
+    // The twin of the background rule above, and it was missed the first time:
+    // only ONE scene of twenty-two ever showed a character, and every other one
+    // inherited whoever happened to be on screen. That reads correctly while the
+    // story runs straight through and empties the moment a phase change clears
+    // the stage — so the golem talked from nowhere for most of the game.
+    //
+    // A linear scan is exact: branching happens *between* scenes, never inside
+    // one, so the steps before a given line always run in this order.
+    for (stem, (path, _, scene)) in &scenes {
+        let mut on_stage: BTreeMap<&Slot, &String> = BTreeMap::new();
+        for (i, step) in scene.steps.iter().enumerate() {
+            match step {
+                RawStep::Show { character, slot } => {
+                    on_stage.insert(slot, character);
+                }
+                RawStep::Hide { slot } => {
+                    on_stage.remove(slot);
+                }
+                RawStep::Say { speaker, .. } => {
+                    if !on_stage.values().any(|c| *c == speaker) {
+                        fail(&format!(
+                            "{} (step {i}): scene `{stem}` has `{speaker}` speak, but no `Show` \
+                             in this scene put them on stage — so they are invisible whenever \
+                             this scene is entered after a phase change, and the speaker cue \
+                             has no sprite to light. Add `Show(character: \"{speaker}\", \
+                             slot: ...)` before the line. If the voice is meant to come from \
+                             off-stage, that has to be said explicitly rather than by omission.",
+                            path.display()
+                        ));
+                    }
+                }
+                _ => {}
+            }
         }
     }
 
@@ -657,6 +711,168 @@ fn main() {
     std::fs::write(&dest, out).unwrap_or_else(|e| fail(&format!("cannot write generated file: {e}")));
 
     let _: &Path = &assets;
+}
+
+/// The design area's aspect ratio. A hotspot image is sampled in normalised
+/// coordinates, so its resolution is free but its shape is not: at any other
+/// aspect the background is centre-cropped to fit the screen and the lookup is
+/// not, and every hotspot drifts away from the art it was painted over.
+const DESIGN_ASPECT: f32 = 1920.0 / 1080.0;
+
+/// The smallest region worth having, as a fraction of the lookup image. Below
+/// this a hotspot exists but is a pixel-hunt — the failure that makes
+/// point-and-click games infuriating.
+const MIN_REGION: f64 = 0.001;
+
+/// Validates a place's colour-keyed hotspots against its actual lookup image.
+///
+/// Everything here is a failure that is **invisible until played**: a region
+/// colour that appears nowhere in the image, one too small to hit, a lossy
+/// re-encode that shifted every key by a shade, or anti-aliased edges that fill
+/// the boundary of every region with colours matching nothing. None of them are
+/// type errors, and none of them produce a message at runtime — the click just
+/// does nothing.
+fn check_hotspots(assets: &Path, where_: &str, place: &RawPlace) {
+    let declared: Vec<(usize, Rgb)> = place
+        .options
+        .iter()
+        .enumerate()
+        .filter_map(|(i, o)| o.region.map(|r| (i, r)))
+        .collect();
+
+    let lookup = match (&place.lookup, declared.is_empty()) {
+        (None, true) => return, // an ordinary place, nothing to check
+        (None, false) => fail(&format!(
+            "{where_}: option {} declares a region {} but the place has no `lookup:` image, \
+             so nothing can ever match it.",
+            declared[0].0, declared[0].1
+        )),
+        (Some(path), true) => fail(&format!(
+            "{where_}: declares `lookup: Some(\"{path}\")` but no option has a `region:`, \
+             so the map has nothing clickable on it."
+        )),
+        (Some(path), false) => path,
+    };
+
+    check_asset_at(assets, lookup, where_);
+
+    // Lossy formats resample flat colour into gradients. The keys would still
+    // *look* right and would no longer be equal to anything.
+    let ext = Path::new(lookup)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if ext != "png" {
+        fail(&format!(
+            "{where_}: lookup `{lookup}` is `.{ext}`; hotspot lookups must be PNG. \
+             The colours are compared for exact equality, and a lossy encoder shifts them \
+             by a shade or two — which is invisible in the image and fatal to every hotspot."
+        ));
+    }
+
+    for (i, colour) in &declared {
+        if *colour == Rgb(0, 0, 0) {
+            fail(&format!(
+                "{where_} option {i}: black is reserved for `no hotspot here`. \
+                 Give this region another colour."
+            ));
+        }
+        if let Some((j, _)) = declared
+            .iter()
+            .find(|(j, other)| j > i && other == colour)
+        {
+            fail(&format!(
+                "{where_}: options {i} and {j} both claim region {colour}. \
+                 One colour can only select one option."
+            ));
+        }
+    }
+
+    let aspect_of = |rel: &str| -> (u32, u32) {
+        image::ImageReader::open(assets.join(rel))
+            .and_then(|r| r.into_dimensions().map_err(std::io::Error::other))
+            .unwrap_or_else(|e| {
+                fail(&format!(
+                    "{where_}: cannot measure `{rel}`: {e}. A hotspot place's images must be \
+                     PNG or WebP — those are the formats this build script can decode."
+                ))
+            })
+    };
+
+    for (what, rel) in [("background", place.background.as_str()), ("lookup", lookup)] {
+        let (w, h) = aspect_of(rel);
+        let aspect = w as f32 / h as f32;
+        if (aspect - DESIGN_ASPECT).abs() > 0.01 {
+            fail(&format!(
+                "{where_}: {what} `{rel}` is {w}x{h} ({aspect:.3}:1), but hotspot places are \
+                 framed 16:9 ({DESIGN_ASPECT:.3}:1). Any other shape is centre-cropped on \
+                 screen while the lookup is not, so the regions no longer line up with the art."
+            ));
+        }
+    }
+
+    // The census. Cheap, and it is what turns "I painted the map" into a fact
+    // rather than a hope.
+    let image = image::ImageReader::open(assets.join(lookup))
+        .and_then(|r| r.decode().map_err(std::io::Error::other))
+        .unwrap_or_else(|e| fail(&format!("{where_}: cannot decode `{lookup}`: {e}")))
+        .to_rgb8();
+
+    let total = (image.width() as u64 * image.height() as u64) as f64;
+    let mut census: BTreeMap<Rgb, u64> = BTreeMap::new();
+    for px in image.pixels() {
+        *census.entry(Rgb(px.0[0], px.0[1], px.0[2])).or_default() += 1;
+    }
+
+    for (i, colour) in &declared {
+        let count = census.get(colour).copied().unwrap_or(0);
+        if count == 0 {
+            fail(&format!(
+                "{where_} option {i}: region {colour} does not occur anywhere in `{lookup}`, \
+                 so this option is unreachable. Colours actually present: {}",
+                summarise(&census)
+            ));
+        }
+        if count as f64 / total < MIN_REGION {
+            fail(&format!(
+                "{where_} option {i}: region {colour} covers {count} of {total:.0} pixels \
+                 ({:.4}%), under the {:.1}% minimum — the player would have to hunt for it.",
+                count as f64 / total * 100.0,
+                MIN_REGION * 100.0
+            ));
+        }
+    }
+
+    let stray: Vec<String> = census
+        .iter()
+        .filter(|(c, _)| **c != Rgb(0, 0, 0) && !declared.iter().any(|(_, d)| d == *c))
+        .map(|(c, n)| format!("{c} x{n}"))
+        .collect();
+    if !stray.is_empty() {
+        fail(&format!(
+            "{where_}: `{lookup}` contains {} colour(s) matching no region: {}. \
+             The usual cause is ANTI-ALIASING — a soft edge blends the key with its \
+             neighbour, and every blended pixel is a dead spot around the whole outline of \
+             every hotspot. Export the lookup with anti-aliasing off; black means `nothing \
+             here`.",
+            stray.len(),
+            stray.iter().take(5).cloned().collect::<Vec<_>>().join(", ")
+        ));
+    }
+}
+
+/// The colours present, most common first — the useful half of a census when
+/// reporting that a declared one is missing.
+fn summarise(census: &BTreeMap<Rgb, u64>) -> String {
+    let mut by_count: Vec<_> = census.iter().collect();
+    by_count.sort_by_key(|(_, n)| std::cmp::Reverse(**n));
+    by_count
+        .iter()
+        .take(6)
+        .map(|(c, n)| format!("{c} x{n}"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// Checks an asset both exists **and** is in a format Bevy was built to decode.

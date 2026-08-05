@@ -104,11 +104,49 @@ The tell is a variable whose job is to describe something the world already
 knows. Whenever you find one, ask what happens when the world changes without
 telling it — and in an ECS, the world changes without telling anything.
 
+### Classify every piece of presentation state: re-established or ambient
+`[bevy]` `[architecture]` — **confirmed**
+
+Derived presentation splits in two, and the split has to be made deliberately
+for each piece:
+
+- **Re-established** — must match the content currently running, so every unit of
+  content sets it itself and never inherits it. Backgrounds, characters on
+  stage, camera framing.
+- **Ambient** — belongs to the moment rather than to the screen, so it persists
+  across transitions and is restored from saved state, not from replay. Music,
+  volume, weather.
+
+Getting this wrong is invisible along the path you tested. A scene reachable by
+three routes that inherits its background renders correctly down one of them.
+Music re-derived per scene stops dead every time the player opens a menu.
+
+The test for which category something belongs to: *can the code that rebuilds
+the screen work it out from where we are now?* A background can (this scene says
+so); a soundtrack cannot (some earlier scene started it).
+
+> Both halves of this were learned by getting them wrong, a day apart. First 20
+> of 24 scenes inherited a background, then — the same bug, unnoticed because
+> only backgrounds had been audited — 21 of 22 scenes inherited their cast, so
+> characters vanished for most of the game the moment any phase change cleared
+> the stage.
+
+Then enforce it: a build-time check that each unit of content establishes its own
+re-established state is a few lines, and it is the difference between a rule and
+a habit.
+
 ### One writer per piece of data
 `[bevy]` `[architecture]` — **confirmed**
 
 Exactly one system writes each visual concern. Everything else emits events or
 updates state. This is also what keeps Bevy's scheduler able to parallelise.
+
+The same rule applied to *input* is what keeps a second input device from
+becoming a second implementation. When a menu could be driven both by clicking
+buttons and by clicking regions of a map, each input system was reduced to
+writing "the player picked option 3" into one resource, and a single system
+applied it. The re-checked guard conditions, the stack manipulation and the state
+routing exist once. Two copies of that logic would not have stayed identical.
 
 ### Encode identity as enums, and produce content from an exhaustive `match`
 `[rust]` `[ai-workflow]` — **confirmed**
@@ -162,6 +200,49 @@ beside the manifest that enables them.
 > Bevy 0.19 groups codecs into opt-in features; only `png` and `hdr` arrive via
 > the default profiles. A `.webp` asset passed an existence-only validator that
 > had been described as thorough the previous day.
+
+### Validate the *contents* of binary assets, not only their paths
+`[tooling]` `[ai-workflow]` — **measured**
+
+Once an image or an audio file carries meaning that code depends on — a
+colour-keyed hotspot map, a tile atlas, a palette — checking that the file exists
+and decodes is no longer enough. The data inside it has to agree with the data
+file that describes it, and nothing at runtime will ever complain: the click
+simply does nothing.
+
+A build script can decode the image and audit it. Worth checking, in the case of
+a hotspot lookup:
+
+- every declared key colour actually **occurs** in the image;
+- it covers enough area to be clickable, not one stray pixel;
+- **no undeclared colour occurs** — the anti-aliasing guard, and the one that
+  matters most, because a soft edge surrounds every region with a halo of
+  near-miss colours that match nothing;
+- the encoding is **lossless** — a lossy codec shifts flat colours by a shade,
+  which is invisible to the eye and fatal to exact-match keys;
+- the aspect ratio matches what the game samples it in.
+
+> Measured: decoding a 960x540 lookup and counting colours costs nothing
+> noticeable in a build script. Each of the five checks above was verified by
+> deliberately breaking it; the anti-aliasing one reported
+> `contains 3 colour(s) matching no region: (30, 70, 110) x656, ...`
+
+Adding an image decoder to a build script is safe even in a Bevy project — see
+the feature-isolation note under *Build and tooling*.
+
+### Generate paired assets from one definition
+`[tooling]` — **confirmed**
+
+When two files must agree pixel-for-pixel — art and its hotspot mask, a tileset
+and its collision map — do not maintain them side by side in an editor. Generate
+both from one source, so agreement is structural rather than a discipline.
+
+For placeholder art this is nearly free and pays immediately: a ~150-line
+generator emitted a map picture and its lookup image from one set of shape
+predicates, at different resolutions, and they cannot drift.
+
+When real art arrives the guarantee has to move somewhere, and that somewhere is
+the build-time audit above.
 
 ### Spell out enum variants in code that must handle all of them
 `[rust]` `[ai-workflow]` — **confirmed**
@@ -279,6 +360,37 @@ feature sets and rebuild the engine when you switch.
 Declare shared dependencies in `[workspace.dependencies]` and have every member
 take them, even where currently unused.
 
+### Build-dependencies are feature-isolated — use them freely
+`[rust]` `[tooling]` — **measured**
+
+The rule that a new dependency can trigger a full engine rebuild applies to
+*normal* dependencies. Cargo's resolver 2 and 3 resolve **build-dependencies**
+separately, so a build script may depend on a crate the engine also uses without
+changing the features of the engine's copy.
+
+This matters because it is what lets a build script do real work — decode images,
+parse binary formats, hash assets — instead of being limited to text.
+
+> Measured, resolver 3: adding `image` (with `png` + `webp`) to a Bevy crate's
+> `[build-dependencies]` rebuilt `image`, `png` and four small leaves as build
+> artifacts. No `bevy_*` crate recompiled; the incremental build stayed at 38s.
+
+Pin such a dependency to the version already in `Cargo.lock` so it resolves from
+the registry cache rather than fetching a second source copy.
+
+### Keep tools out of the workspace, not just out of the build
+`[rust]` `[tooling]` — **confirmed**
+
+An asset generator, a one-off converter or a benchmark harness usually wants
+dependencies the game does not have. Adding it as a workspace member puts those
+dependencies into the set cargo unifies features over — the exact mechanism that
+rebuilds an engine.
+
+Give the tool its own directory with an empty `[workspace]` table in its
+manifest. That detaches it: it resolves independently, builds only when run, and
+cannot influence the game's feature graph. It still picks up a shared
+`.cargo/config.toml` above it, so the build cache is reused anyway.
+
 ### Use a workspace with a shared build cache
 `[rust]` `[tooling]` — **measured**
 
@@ -353,6 +465,24 @@ silently matches nothing passes forever.
 They cannot catch a document that is *wrong about why* — only one that names
 something gone. In practice that is most of the drift, and the rest needs the
 discipline below rather than a test.
+
+### When you find a bug, fix its class — then go looking for the siblings
+`[ai-workflow]` — **confirmed**
+
+A bug is nearly always an instance of a rule that was never stated. Once the rule
+is clear, the work is not finished: something else in the project is almost
+certainly breaking the same rule, and it will be found by a human playing rather
+than by the guard you just wrote.
+
+The mechanical version of this: after adding a guard, write down the *category*
+it protects, then enumerate the other members of that category and check each
+one.
+
+> A rule that content must establish its own background was discovered, fixed
+> across 20 scenes, given a build-time guard, and written into three documents —
+> while the identical problem with characters sat one field away in the same
+> struct, untouched, and shipped. It cost a second bug report from the user for
+> what was, by then, a completely understood failure.
 
 ### Write documentation after the work lands, not during
 `[ai-workflow]` — **confirmed**

@@ -13,7 +13,9 @@
 //! for. Systems that need a window (the letterbox) find none and return early,
 //! which is exactly what they should do.
 
+use bevy::asset::RenderAssetUsages;
 use bevy::prelude::*;
+use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::state::app::StatesPlugin;
 use vn_core::prelude::*;
 // Not in the prelude: it is an internal presentation detail, but asserting on it
@@ -166,6 +168,99 @@ fn returning_from_a_called_scene_redraws_the_place() {
         option_buttons(&mut app) > 0,
         "returning from a called scene left the place with no options — this is \
          the dead end that shipped, and it passed every other test"
+    );
+}
+
+/// A map place lists nothing — its options are on the picture — but it must
+/// still tell the player what is under the cursor.
+#[test]
+fn a_map_place_draws_a_hotspot_label_and_no_buttons() {
+    let mut app = harness();
+    settle(&mut app);
+    go(&mut app, AppState::Playing);
+
+    app.world_mut()
+        .resource_mut::<StoryState<scenes::SceneId>>()
+        .push_place("valley".to_string());
+    go(&mut app, AppState::Exploring);
+
+    assert_eq!(
+        option_buttons(&mut app),
+        0,
+        "every option on the valley map has a region, so none should be listed"
+    );
+    assert_eq!(
+        app.world_mut()
+            .query::<&vn_core::present::HotspotLabel>()
+            .iter(app.world())
+            .count(),
+        1,
+        "a map place must name the region under the cursor — the hotspots are \
+         invisible, so without the label the player is hunting pixels"
+    );
+}
+
+/// Sampling a colour must select the option that declared it, and must respect
+/// that option's condition exactly as a button does.
+///
+/// The real lookup PNG cannot be loaded here — no render plugins means no image
+/// loader — and `build.rs` already audits its pixels. What needs proving in the
+/// engine is the step after that: colour in, option out.
+#[test]
+fn a_sampled_region_selects_the_option_that_declared_it() {
+    let places = scenes::places();
+    let place = places.get("valley").expect("the demo has a map place");
+    assert!(place.lookup.is_some(), "`valley` should be a map place");
+
+    let regions: Vec<Rgb> = place.options.iter().filter_map(|o| o.region).collect();
+    assert_eq!(regions.len(), 3, "the valley map declares three regions");
+
+    // A lookup one pixel tall and one column per region, so column i covers
+    // design-space band i — the geometry the real image has, in miniature.
+    let mut data = Vec::new();
+    for r in &regions {
+        data.extend_from_slice(&[r.0, r.1, r.2, 255]);
+    }
+    let image = Image::new(
+        Extent3d {
+            width: regions.len() as u32,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        data,
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::MAIN_WORLD,
+    );
+
+    let flags = Default::default();
+    let items = Default::default();
+    for (column, expected) in regions.iter().enumerate() {
+        let x = DESIGN_W * ((column as f32 + 0.5) / regions.len() as f32 - 0.5);
+        let sampled = sample_design_point(&image, x, 0.0);
+        assert_eq!(
+            sampled,
+            Some(*expected),
+            "sampling the middle of column {column} read the wrong colour"
+        );
+        let picked = places.option_for_region("valley", sampled.unwrap(), &flags, &items);
+        assert_eq!(
+            picked.and_then(|i| place.options.get(i)).map(|o| &o.label),
+            place
+                .options
+                .iter()
+                .find(|o| o.region == Some(*expected))
+                .map(|o| &o.label),
+            "region {expected:?} selected the wrong option"
+        );
+    }
+
+    // Outside the design area there is nothing to click — the letterbox bars.
+    assert_eq!(sample_design_point(&image, DESIGN_W, 0.0), None);
+    // Black is `no hotspot here`, never an option.
+    assert_eq!(
+        places.option_for_region("valley", Rgb::EMPTY, &flags, &items),
+        None
     );
 }
 

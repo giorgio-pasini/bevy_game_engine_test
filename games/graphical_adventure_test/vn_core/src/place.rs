@@ -25,6 +25,20 @@ pub enum Effect {
     Leave,
 }
 
+/// A colour key in a hotspot lookup image, as written in RON: `(220, 60, 60)`.
+///
+/// Kept as raw bytes rather than a [`Color`]: these are looked up by exact
+/// equality, and a float colour invites a near-miss that is invisible in the
+/// file and unclickable in the game.
+#[derive(Copy, Clone, PartialEq, Eq, Deserialize, Debug)]
+pub struct Rgb(pub u8, pub u8, pub u8);
+
+impl Rgb {
+    /// Reserved for "no hotspot here", so a lookup image needs no alpha channel
+    /// and no separate mask.
+    pub const EMPTY: Rgb = Rgb(0, 0, 0);
+}
+
 #[derive(Clone, Deserialize, Debug)]
 pub struct PlaceOption {
     pub label: String,
@@ -32,6 +46,13 @@ pub struct PlaceOption {
     /// `None` means always available.
     #[serde(default)]
     pub condition: Option<Condition>,
+    /// Colour identifying this option's region in the place's lookup image.
+    ///
+    /// An option with a region is clicked **on the map** and is not listed as a
+    /// button; one without is a button, as before. A place may mix the two — a
+    /// map with a "Back" button underneath is just an option with no region.
+    #[serde(default)]
+    pub region: Option<Rgb>,
 }
 
 #[derive(Clone, Deserialize, Debug)]
@@ -42,12 +63,28 @@ pub struct Place {
     /// Shown above the options; the room's name or a line of description.
     #[serde(default)]
     pub caption: Option<String>,
+    /// Colour-keyed hotspot image for this place, if it is a map.
+    ///
+    /// Never drawn — it is sampled. Same 16:9 framing as the background, so a
+    /// point on screen is the same point in both; `build.rs` enforces that, the
+    /// lossless format, and that every declared colour is actually present.
+    #[serde(default)]
+    pub lookup: Option<String>,
     pub options: Vec<PlaceOption>,
 }
 
 /// Place id -> place. Loaded once from the embedded `places/*.ron`.
 #[derive(Resource, Clone, Default)]
 pub struct Places(pub BTreeMap<String, Place>);
+
+/// The option the player picked this frame, whichever input noticed it.
+///
+/// Buttons and map hotspots are two ways of saying the same thing, so they both
+/// write here and exactly one system applies the effect. Without this the
+/// re-checked condition, the stack manipulation and the flow routing would exist
+/// once per input device, and the second copy would be the one that drifts.
+#[derive(Resource, Default)]
+pub struct PickedOption(pub Option<usize>);
 
 /// Resolves a scene *name* (as written in a place file) to the game's scene id.
 /// Supplied by the game, since only it knows the generated enum.
@@ -80,5 +117,26 @@ impl Places {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    /// The option a hotspot colour selects, if any.
+    ///
+    /// Built on [`Places::available`] so a hotspot obeys exactly the same guard
+    /// as a button: an option whose condition fails is not clickable on the map
+    /// either, without that rule being written down twice.
+    pub fn option_for_region(
+        &self,
+        id: &str,
+        colour: Rgb,
+        flags: &BTreeMap<String, i32>,
+        items: &std::collections::BTreeSet<String>,
+    ) -> Option<usize> {
+        if colour == Rgb::EMPTY {
+            return None;
+        }
+        self.available(id, flags, items)
+            .into_iter()
+            .find(|(_, o)| o.region == Some(colour))
+            .map(|(i, _)| i)
     }
 }

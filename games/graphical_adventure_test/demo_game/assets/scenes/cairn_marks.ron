@@ -3,6 +3,11 @@
 (
   steps: [
     Background("backgrounds/mountains.webp"),
+    // Every scene stages its own cast: a scene is entered by several routes, and
+    // a phase change clears the stage. Inheriting whoever happened to be on
+    // screen renders correctly down one path and empty down the others.
+    Show(character: "mira", slot: Left),
+    Show(character: "golem", slot: Right),
     Set("read_cairn"),
     Narrate(r#"Someone has cut a line of shallow marks into the top stone. Not letters. Tallies."#),
     Say(speaker: "mira", text: r#"Six hundred and eleven."#),

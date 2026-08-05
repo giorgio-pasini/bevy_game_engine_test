@@ -29,10 +29,12 @@ games/                         Cargo workspace
     demo_game/                 demo consuming it
       assets/scenes/*.ron        narrative, prose inline
       assets/places/*.ron        explorable locations
+      assets/maps/               map art + colour-keyed hotspot lookups
       assets/cast.ron            character id -> name + image
       assets/presentation.ron    visual tuning; edit and rebuild, no Rust
       build.rs                   validates all of the above at BUILD time
       src/app_tests.rs           headless tests of the real Bevy app
+    tools/mapgen/              placeholder map generator; NOT a workspace member
   target-shared/               shared build cache (~20 GB)
 test_images/                   source art
 ```

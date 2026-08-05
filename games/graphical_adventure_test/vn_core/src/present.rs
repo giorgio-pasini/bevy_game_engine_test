@@ -6,6 +6,7 @@
 use bevy::prelude::*;
 use std::collections::BTreeMap;
 
+use crate::map::HoveredHotspot;
 use crate::place::*;
 use crate::story::*;
 
@@ -498,6 +499,14 @@ pub struct PlaceOptionButton(pub usize);
 #[derive(Component)]
 pub struct ExploreRoot(pub String);
 
+/// Names whatever region the cursor is over, on a map place.
+///
+/// Not decoration: hotspots are invisible by construction, so without this the
+/// player is hunting a picture for clickable pixels. It is the map's equivalent
+/// of a button's text.
+#[derive(Component)]
+pub struct HotspotLabel;
+
 /// Draws the current place: caption and available options.
 ///
 /// Backgrounds and music are not touched here — the place's own values are
@@ -525,7 +534,14 @@ pub fn spawn_place_view<S: SceneKey>(
         stage.music = Some(track.clone());
     }
 
-    let options = places.available(id, &state.flags, &state.items);
+    // Options with a region are clicked on the map, not listed. A place may
+    // hold both kinds, and each is drawn by the input it belongs to.
+    let listed: Vec<_> = places
+        .available(id, &state.flags, &state.items)
+        .into_iter()
+        .filter(|(_, option)| option.region.is_none())
+        .collect();
+    let is_map = place.lookup.is_some();
 
     commands
         .spawn((
@@ -557,7 +573,26 @@ pub fn spawn_place_view<S: SceneKey>(
                     TextColor(Color::srgb(0.98, 0.82, 0.36)),
                 ));
             }
-            for (index, option) in options {
+            if is_map {
+                parent.spawn((
+                    Node {
+                        margin: UiRect::bottom(Val::Px(20.0)),
+                        padding: UiRect::axes(Val::Px(18.0), Val::Px(8.0)),
+                        ..default()
+                    },
+                    // Always present, empty when nothing is under the cursor:
+                    // one node written by one system beats spawning and
+                    // despawning a label as the mouse moves.
+                    Text::new(""),
+                    TextFont {
+                        font_size: FontSize::Px(26.0),
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.94, 0.95, 0.97)),
+                    HotspotLabel,
+                ));
+            }
+            for (index, option) in listed {
                 parent
                     .spawn((
                         Button,
@@ -610,6 +645,45 @@ pub fn refresh_place_view<S: SceneKey>(
         commands.entity(e).despawn();
     }
     spawn_place_view::<S>(commands, state, places, stage);
+}
+
+/// Names the region under the cursor. The only writer of that text node.
+pub fn draw_hotspot_label<S: SceneKey>(
+    state: Res<StoryState<S>>,
+    places: Res<Places>,
+    hovered: Res<HoveredHotspot>,
+    mut label: Query<&mut Text, With<HotspotLabel>>,
+) {
+    let Ok(mut text) = label.single_mut() else {
+        return; // not a map place
+    };
+    let wanted = hovered
+        .0
+        .and_then(|index| {
+            let id = state.current_place()?;
+            places.get(id)?.options.get(index)
+        })
+        .map(|option| option.label.clone())
+        .unwrap_or_default();
+    // Guarded so an unchanging label does not mark the text as changed sixty
+    // times a second and re-run text layout for nothing.
+    if text.0 != wanted {
+        text.0 = wanted;
+    }
+}
+
+/// A pressed option button, expressed as a picked option. Deliberately does not
+/// apply anything — see [`PickedOption`].
+pub fn pick_place_button(
+    buttons: Query<(&Interaction, &PlaceOptionButton), Changed<Interaction>>,
+    mut picked: ResMut<PickedOption>,
+) {
+    for (interaction, button) in &buttons {
+        if *interaction == Interaction::Pressed {
+            picked.0 = Some(button.0);
+            break;
+        }
+    }
 }
 
 pub fn highlight_choices(

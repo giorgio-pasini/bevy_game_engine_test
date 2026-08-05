@@ -12,6 +12,10 @@
     (label: "Hold out the brass gear",
      effect: Call("give_gear"),
      condition: Some(HasItem("brass_gear"))),
+    // The same two rooms are reachable from here as buttons and from the map as
+    // hotspots. That redundancy is the point: it is what shows the two input
+    // styles are one mechanism.
+    (label: "Look out over the valley",    effect: GoTo("valley")),
     (label: "Go on over the peaks",        effect: Leave),
   ],
 )

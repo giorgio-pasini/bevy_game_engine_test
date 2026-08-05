@@ -1,6 +1,9 @@
 (
   steps: [
     Background("backgrounds/mountains.webp"),
+    Show(character: "mira", slot: Left),
+    Show(character: "golem", slot: Right),
+    // The cloud closing over him, expressed on stage.
     Hide(slot: Right),
 
     Narrate(r#"The cloud closes over him as she passes. She walks."#),

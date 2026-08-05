@@ -16,6 +16,14 @@ serde = { workspace = true }
 [build-dependencies]
 ron = { workspace = true }
 serde = { workspace = true }
+# Decodes hotspot lookup images so their colours can be audited at build time.
+#
+# Safe to add despite `image` also sitting under Bevy: cargo's resolver 2/3
+# resolves build-dependency features SEPARATELY from normal ones, so this cannot
+# change the features of the copy the engine uses — which is the thing that would
+# cost a full rebuild. Pinned to the version already in Cargo.lock so it comes
+# from the registry cache.
+image = { version = "=0.25.10", default-features = false, features = ["png", "webp"] }
 
 [features]
 # Must stay identical to vn_core's and snake's `dev` feature — see the note in

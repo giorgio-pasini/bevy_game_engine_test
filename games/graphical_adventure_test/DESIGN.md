@@ -111,6 +111,7 @@ What a game of this genre actually needs, grouped by concern. Anything marked
 | Typewriter reveal | Progressive character reveal, skippable | Reveal count, not string mutation — see Part 4 |
 | Narration | Prose with no speaker | Same box, different styling. A distinct step type |
 | Choice menu | Buttons for available branches | Unavailable choices hidden or shown disabled |
+| Map hotspots | Clickable regions of a picture | Colour-keyed lookup image, not coordinates — see Part 6b |
 | Screen effects | Fade to/from black, flash, shake | Small closed set, not a general animation system |
 | UI chrome | Auto, Skip, Log, Save, Load, Settings | Hideable, so the art can be admired |
 
@@ -487,6 +488,19 @@ overlapped. Every milestone must actually launch.
 progress and text reveal counts are derived. Saving them guarantees they will
 one day contradict the story state.
 
+**Every scene establishes its own background and its own cast.** A scene is
+entered by several routes — jumped to, chosen, called from a place — and leaving
+a phase clears the visible stage. Content that inherits what happens to be on
+screen renders correctly down the path you tested and empty down the others.
+`build.rs` enforces both halves: a scene that speaks before setting a
+`Background` fails the build, and so does a `Say` whose speaker was never
+`Show`n in that same scene.
+
+Music is the deliberate exception, because it is **ambient rather than
+re-established**: no replay of the current stack can know which earlier scene
+started the track. The general form of this distinction is in
+[the guide](../../bevytest_documentation/ai_gamedev_guide_for_bevy.md).
+
 **Do not put dialogue text in the scene graph.** It defeats localisation and
 bloats compile times. Text keys only.
 
@@ -565,6 +579,13 @@ Every path verified to exist, relative to `../../bevy/examples/`.
 
 ## Part 6 — Extension seams for point-and-click
 
+> **IMPLEMENTED 2026-08-04/05.** All three seams were used, and they held: the
+> extension was additive, as predicted. Part 6b describes what was actually
+> built; this section is kept because the *prediction* is the interesting part.
+> One correction — seam 3 was wrong. Inventory did not stay a `VarId`
+> convention; items became their own set with their own conditions, because
+> "does the player carry this" and "did this happen" want different guards.
+
 Not implemented, but designed for. Adding classic adventure mechanics later
 should touch these three places and nothing else.
 
@@ -587,6 +608,65 @@ be silent and error-prone.
 
 ---
 
+## Part 6b — Exploration, as built
+
+The truth is `vn_core/src/place.rs`, `vn_core/src/map.rs` and
+`vn_core/src/story.rs`. This is the shape of it.
+
+### Places and the control stack
+
+A place is a background plus a list of options; movement, actions and leaving
+differ only by their `Effect` (`GoTo`, `Call`, `Leave`), so one button list
+renders all three. "Where we are" is a `Vec<Frame<S>>` — Ren'Py's `call`/`return`
+model — and which phase is active is simply what sits on top of it.
+
+`GoTo` **replaces** the top frame rather than pushing: walking between rooms is
+not recursion, and pushing would make one `Leave` unwind a room at a time.
+
+### Map hotspots
+
+A place may also name a **lookup image**. Each clickable region is a flat colour
+in it; an option naming that colour is selected by clicking there:
+
+```ron
+(
+  background: "maps/valley.png",
+  lookup: Some("maps/valley_lookup.png"),
+  options: [
+    (label: "The cairn on the shoulder", effect: GoTo("cairn"), region: Some((220, 60, 60))),
+  ],
+)
+```
+
+An option with a `region` is clicked on the picture and is not listed; one
+without is a button. A place may hold both — a map with a "Back" button under it
+is just an option with no region. Nothing else in the system knows the
+difference: conditions, effects and the stack are shared, because a hotspot is
+an option, not a parallel mechanism.
+
+Four properties, each chosen deliberately:
+
+- **No coordinates are authored.** Any shape works, and moving a mountain in the
+  art means repainting the same shape in the lookup.
+- **Sampling is normalised**, so the lookup may be any resolution; only its
+  aspect ratio must match. A 960x540 placeholder and finished art are
+  interchangeable with no data change.
+- **Black means "nothing here"**, so no alpha channel and no second mask.
+- **Both inputs produce the same currency.** A pressed button and a clicked
+  region each write "the player picked option *n*" into `PickedOption`, and one
+  system applies it.
+
+The failure modes are all silent — the click simply does nothing — so `build.rs`
+audits the actual pixels: every declared colour occurs, covers at least 0.1% of
+the image, no *undeclared* colour occurs (the anti-aliasing guard), the encoding
+is lossless PNG, the aspect is 16:9, and no two options share a colour.
+
+Placeholder art comes from `tools/mapgen`, which emits the picture and the lookup
+from one set of shape predicates so they cannot drift. It is deliberately not a
+workspace member — see the guide on keeping tools out of the feature graph.
+
+---
+
 ## Part 7 — Implementation roadmap
 
 Each milestone ends in something runnable. Never integrate big-bang.
@@ -601,8 +681,9 @@ Each milestone ends in something runnable. Never integrate big-bang.
 > voice).
 >
 > **Added since, not in this table:** the exploration phase — control stack,
-> places, exits, actions, inventory conditions. Its own staging lives in the
-> journal entry for 2026-08-04.
+> places, exits, actions, inventory conditions, and map hotspots (Part 6b). Its
+> own staging lives in the journal entries for 2026-08-04 and 2026-08-05; only
+> stage 5, save/load, remains.
 
 | # | Milestone | Done when |
 | --- | --- | --- |
@@ -702,9 +783,21 @@ through one styling helper.
 
 ### Stages still outstanding
 
-3. Inventory in play (`GiveItem`/`TakeItem` exist; nothing grants an item yet)
-4. Map hotspots with colour-keyed lookup images
-5. Save/load across the control stack
+5. Save/load across the control stack — designed in Part 3; `rebuild_stage`
+   already performs the bottom-up replay a restore needs, so what is left is
+   serialisation, slot files, and a save→load→save round-trip assertion.
+
+### ~~Stage 3, inventory~~ — done 2026-08-04
+
+`GiveItem`/`TakeItem` in play: the ledge grants a brass gear, an option on the
+ridge appears only while carrying it, and returning it consumes it. `build.rs`
+requires every item a condition demands to be granted somewhere.
+
+### ~~Stage 4, map hotspots~~ — done 2026-08-05
+
+Colour-keyed lookup images; see Part 6b. Six new build guards, each verified by
+breaking it, plus two headless tests. Placeholder art is generated by
+`tools/mapgen`.
 
 ### ~~Headless app tests~~ — done 2026-08-04
 

@@ -8,12 +8,14 @@
 use bevy::prelude::*;
 
 pub mod letterbox;
+pub mod map;
 pub mod place;
 pub mod present;
 pub mod story;
 
 pub mod prelude {
     pub use crate::letterbox::*;
+    pub use crate::map::*;
     pub use crate::place::*;
     pub use crate::present::{DESIGN_H, DESIGN_W};
     pub use crate::story::*;
@@ -69,6 +71,9 @@ impl<S: SceneKey> Plugin for VnPlugin<S> {
         .init_resource::<AppliedStage>()
         .init_resource::<CurrentLine>()
         .init_resource::<PendingChoices>()
+        .init_resource::<PickedOption>()
+        .init_resource::<map::MapLookup>()
+        .init_resource::<map::HoveredHotspot>()
         .init_state::<AppState>()
         .add_sub_state::<PlayMode>()
         .add_systems(Startup, letterbox::spawn_camera)
@@ -87,9 +92,22 @@ impl<S: SceneKey> Plugin for VnPlugin<S> {
         .add_systems(OnEnter(AppState::MainMenu), stop_everything)
         // Exploration. The view is rebuilt by `refresh_place_view` whenever the
         // place changes, since moving between rooms does not change AppState.
+        //
+        // Ordered read → decide → apply: the lookup image follows the place, the
+        // cursor is resolved against it, the two input systems say what was
+        // picked, and one system applies it. Running the applier last is what
+        // lets a click be handled in the frame it happens.
         .add_systems(
             Update,
-            (refresh_place_view::<S>, choose_place_option::<S>)
+            (
+                refresh_place_view::<S>,
+                map::sync_lookup::<S>,
+                map::hover_hotspot::<S>,
+                draw_hotspot_label::<S>,
+                pick_place_button,
+                map::click_hotspot,
+                apply_picked_option::<S>,
+            )
                 .chain()
                 .run_if(in_state(AppState::Exploring)),
         )
@@ -161,7 +179,7 @@ fn apply_flow(
     next_app: &mut NextState<AppState>,
     next_mode: &mut NextState<PlayMode>,
 ) {
-    let mut go = |target: AppState, next_app: &mut NextState<AppState>| {
+    let go = |target: AppState, next_app: &mut NextState<AppState>| {
         if *current != target {
             next_app.set(target);
         }
@@ -355,10 +373,14 @@ fn choose_on_click<S: SceneKey>(
     }
 }
 
-/// Clicking an option in a place: move, call a scene, or leave.
+/// Applies whichever option the player picked: move, call a scene, or leave.
+///
+/// The single consumer of [`PickedOption`], and therefore the only place an
+/// option's effect happens. A button press and a click on a map region are two
+/// ways of naming an option; what follows must not depend on which one it was.
 #[allow(clippy::too_many_arguments)]
-fn choose_place_option<S: SceneKey>(
-    buttons: Query<(&Interaction, &PlaceOptionButton), Changed<Interaction>>,
+fn apply_picked_option<S: SceneKey>(
+    mut picked: ResMut<PickedOption>,
     mut state: ResMut<StoryState<S>>,
     script: Res<Script<S>>,
     places: Res<Places>,
@@ -370,20 +392,15 @@ fn choose_place_option<S: SceneKey>(
     mut next_app: ResMut<NextState<AppState>>,
     mut next_mode: ResMut<NextState<PlayMode>>,
 ) {
-    for (interaction, button) in &buttons {
-        if *interaction != Interaction::Pressed {
-            continue;
-        }
-        let flow = take_option(button.0, &mut state, &script, &places, lookup.0);
-        // Calling a scene or leaving lands us mid-frame, so run the engine to
-        // reach the next thing that actually waits for the player.
-        let flow = match flow {
-            Flow::Playing(_) => {
-                advance(&mut state, &script, &mut stage, &mut line, &mut choices)
-            }
-            other => other,
-        };
-        apply_flow(flow, app_state.get(), &mut next_app, &mut next_mode);
-        break;
-    }
+    let Some(index) = picked.0.take() else {
+        return;
+    };
+    let flow = take_option(index, &mut state, &script, &places, lookup.0);
+    // Calling a scene or leaving lands us mid-frame, so run the engine to
+    // reach the next thing that actually waits for the player.
+    let flow = match flow {
+        Flow::Playing(_) => advance(&mut state, &script, &mut stage, &mut line, &mut choices),
+        other => other,
+    };
+    apply_flow(flow, app_state.get(), &mut next_app, &mut next_mode);
 }
