@@ -284,6 +284,18 @@ goes red. When it stays green, ask *what else could produce this value* — a
 default, a fresh start, a coincidence of content — and pick an expected value
 that only the code under test can produce.
 
+**The fixture is part of the test's strength**, which is the subtler version of
+this and bit twice more the same week:
+
+| Fixture as first written | Why nothing could fail | Fix |
+| --- | --- | --- |
+| A branch whose *guarded* option came last | The surviving option kept index 0, so a bug renumbering options after filtering produced the same answer | Put the guarded option first |
+| No option claiming the reserved "empty" colour | The assertion that the reserved colour selects nothing held whether or not the guard existed | Add a deliberately mis-authored option claiming it |
+
+Both were found by breaking the code and watching the test stay green. A fixture
+chosen for readability tends to be the one where indices, defaults and
+coincidences line up — which is exactly where a test stops discriminating.
+
 ---
 
 ## Fixing the instance and declaring the class fixed

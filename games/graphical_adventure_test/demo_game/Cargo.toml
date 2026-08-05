@@ -24,6 +24,9 @@ serde = { workspace = true }
 # cost a full rebuild. Pinned to the version already in Cargo.lock so it comes
 # from the registry cache.
 image = { version = "=0.25.10", default-features = false, features = ["png", "webp"] }
+# Reads the workspace manifest so the list of decodable formats is derived from
+# the engine's real feature set instead of being copied by hand.
+toml = "0.9"
 
 [features]
 # Must stay identical to vn_core's and snake's `dev` feature — see the note in

@@ -185,6 +185,60 @@ Then enforce it: a build-time check that each unit of content establishes its ow
 re-established state is a few lines, and it is the difference between a rule and
 a habit.
 
+### State the frame's order once, as system sets
+`[bevy]` `[architecture]` — **measured**, Bevy 0.19.0
+
+Registering several `Update` chains — one per feature, each internally ordered —
+leaves every *cross*-chain pair undefined. Bevy runs conflicting systems
+serially, so this is not a data race; it is worse in one way, because the
+arbitrary order looks deliberate and can flip the day someone adds a system.
+
+Name the phases of a frame as `SystemSet`s and chain them once:
+
+```rust
+app.configure_sets(Update, (
+    Session,                                        // menu, save, load
+    Story.run_if(in_state(AppState::Playing)),      // narrative phase
+    Explore.run_if(in_state(AppState::Exploring)),  // exploration phase
+    Persist,                                        // snapshot after decisions
+    Present,                                        // reconcile the screen
+).chain());
+```
+
+Two payoffs beyond determinism. Reading the set names *is* the answer to "what
+happens in a frame". And it forces the question of where presentation belongs —
+which, in this project, exposed a real defect.
+
+> Measured: Bevy's ambiguity detector reported **43 pairs, 42 of them ours**. It
+> also revealed that the presentation chain had been registered first, so the
+> reconcilers read state *before* the logic wrote it — every frame drew the
+> previous frame's state, invisibly. After the sets: **1 pair**, engine-owned and
+> benign.
+
+The parallelism given up is usually nominal: systems that conflict could not run
+concurrently anyway, and these all touched the same two resources.
+
+### Turn on ambiguity detection and read what it says
+`[bevy]` `[tooling]` — **measured**, Bevy 0.19.0
+
+It is off by default (`LogLevel::Ignore`), costs one call, and is pure
+diagnosis:
+
+```rust
+app.edit_schedule(Update, |schedule| {
+    schedule.set_build_settings(ScheduleBuildSettings {
+        ambiguity_detection: LogLevel::Warn,
+        ..default()
+    });
+});
+```
+
+Gate it behind your `dev` feature: the report names the engine's own systems
+too. Expect to ignore a few engine-owned pairs — and write down *which*, so
+"ignored" stays a decision rather than a habit. Do not silence one by declaring
+`ambiguous_with` against an engine internal; that trades a warning for a
+coupling.
+
 ### One writer per piece of data
 `[bevy]` `[architecture]` — **confirmed**
 
@@ -236,6 +290,34 @@ code referencing that content stays compile-checked too, and emit
 
 It is not a DSL — `serde` does the parsing — so it does not cross the
 over-engineering line that hand-writing a parser would.
+
+### Derive a guard from the source of truth, never copy it
+`[rust]` `[ai-workflow]` — **confirmed**
+
+A validator that restates a fact — enabled features, supported formats, valid
+names — is a second copy of that fact, and copies drift. The failure is
+particularly nasty because it is silent *and* inverted: the guard keeps passing
+while describing a world that no longer exists, and its existence is what stops
+anyone checking.
+
+The tell is a comment asking the reader to keep two things in step. That comment
+is a bug report about the design.
+
+> A build script listed the image and audio formats the engine could decode, with
+> a note to keep it matching the manifest. It now parses the manifest. A
+> build-dependency on `toml` made that five lines, and build-dependency features
+> are resolved separately, so it cost no engine rebuild.
+
+Two cautions when deriving:
+
+- **Check what the source of truth actually says.** Deriving only from the
+  explicit list would have dropped `.ogg` — every piece of music in the game —
+  because Bevy's codecs also arrive through feature *profiles*. What comes from
+  a profile is now a named constant citing the engine manifest it was read from.
+- **Guard the guard.** If the parse silently matches nothing, the derived list is
+  empty and the check either rejects everything or — if anyone "fixes" that by
+  falling back — accepts everything. Assert that the derivation found something
+  it must always find.
 
 ### Validate that assets *load*, not merely that they exist
 `[bevy]` `[tooling]` — **confirmed**, Bevy 0.19.0
@@ -373,6 +455,86 @@ Two things that bite when driving a headless app:
 - **When a system must not run before a state transition, say so with a run
   condition**, not by where it sits in the schedule. `run_if(not(in_state(..)))`
   survives someone reordering the chain; a position does not.
+
+### A library's tests must not depend on one consumer's content
+`[testing]` `[architecture]` — **confirmed**
+
+When an engine and a game live in one repository, it is natural to test the
+engine by driving the game. It is also a trap: a regression the game does not
+happen to exercise is invisible, and every content edit threatens tests that are
+supposed to be about the engine.
+
+Give the library a **synthetic** fixture — a handful of scenes, rooms or levels
+that exist only to be awkward: a branch never taken, an option always refused, a
+cursor one step past a line. None of it needs to be playable.
+
+Then split by subject, not by convenience: the library's tests assert *engine*
+behaviour, and the game's assert *its own content*.
+
+> In this project, 20 tests all lived in the demo and ran against one story.
+> Moving the pure logic into the library produced 15 unit tests that need no
+> assets, no app and no window, and run in hundredths of a second.
+
+### Drive input as messages, not by writing to `ButtonInput`
+`[bevy]` `[testing]` — **confirmed**, Bevy 0.19.0
+
+`keyboard_input_system` **clears** `ButtonInput` in `PreUpdate` and rebuilds it
+from `KeyboardInput` messages. A press written from outside the schedule is
+therefore wiped before any system sees it — the test does nothing and passes for
+the wrong reason.
+
+Write the message instead; it is the same path a window uses:
+
+```rust
+world.write_message(KeyboardInput {
+    key_code: KeyCode::F5, logical_key: Key::F5,
+    state: ButtonState::Pressed,
+    text: None, repeat: false, window: Entity::PLACEHOLDER,
+});
+```
+
+For UI, inserting `Interaction::Pressed` counts as a change and so satisfies
+`Changed<Interaction>`.
+
+**Cursor-driven systems are testable too**, which is worth knowing because it
+looks impossible without a renderer. `Window::set_cursor_position`,
+`Camera.computed` and `RenderTargetInfo` are all public, so a headless test can
+fabricate a window and camera and drive a full pointer path. Derive the cursor
+position by asking the same camera where a known world point lands — then the
+test depends on the projection being self-consistent rather than on your having
+re-derived the engine's matrix.
+
+### Write files that matter atomically
+`[rust]` — **confirmed**
+
+Serialise to a staging file beside the target, then rename over it. `rename` is
+atomic on both Windows and POSIX, so the file is either the old version or the
+new one, never half of either.
+
+Writing in place risks a crash, a full disk or a lost battery truncating the
+only copy — and for a save file, the only copy is the player's progress. It is
+three lines, and it is the difference between "lost the last five minutes" and
+"lost the save".
+
+Delete the staging file if the rename itself fails, or a failure leaves litter
+that the next attempt has to reason about.
+
+### Resolve user-data paths from the environment, not from a crate
+`[rust]` `[tooling]` — **confirmed**
+
+Saves, settings and profiles belong in a **per-user OS directory**
+(`%APPDATA%\<game>` and its equivalents), not beside the executable and not in
+the working directory. The install directory is not user-writable on Windows, a
+machine may have several users, and cloud sync expects a stable path.
+
+The obvious answer is the `directories` crate. In an engine project, check what
+it pulls in first: it depends on `windows-sys`, which Bevy already uses through
+winit, and **a normal dependency sharing a crate with the engine is how a
+feature-unification cascade starts**. Fifteen lines of `env::var_os` behind
+`#[cfg(target_os)]` costs nothing and cannot touch the engine's feature graph.
+
+Have the *library* take the path as a resource and the *game* supply it. That
+also gives tests somewhere harmless to write.
 
 ### Write validation tests for what the compiler cannot check
 `[rust]` `[ai-workflow]` — **measured**

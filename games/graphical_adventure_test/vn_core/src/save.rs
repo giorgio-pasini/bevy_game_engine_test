@@ -75,22 +75,71 @@ pub struct SaveFile {
     pub state: SaveState,
 }
 
-/// Where slot files live. A resource so a test can point it at a temp directory
-/// instead of writing into the player's game folder.
+/// Where slot files live. A resource, so the **game** decides and the library
+/// does not — and so a test can point it at a temp directory instead of writing
+/// into the player's real save folder.
 #[derive(Resource, Clone, Debug)]
 pub struct SaveSlots {
     pub root: PathBuf,
 }
 
 impl Default for SaveSlots {
+    /// A generic per-user folder. Games should override this with
+    /// [`SaveSlots::for_game`] so their saves are not pooled with everyone
+    /// else's.
     fn default() -> Self {
-        Self {
-            root: PathBuf::from("saves"),
-        }
+        Self::for_game("vn_core")
     }
 }
 
 impl SaveSlots {
+    /// The conventional per-user save directory for `game`.
+    ///
+    /// **Not** beside the executable, which is the tempting answer and wrong in
+    /// a release: the install directory is not user-writable on Windows, a
+    /// machine may have several users, and cloud sync expects a stable path
+    /// outside the install. Not the working directory either — that is wherever
+    /// the player happened to launch from.
+    ///
+    /// | Platform | Location |
+    /// | --- | --- |
+    /// | Windows | `%APPDATA%\<game>\saves` |
+    /// | macOS | `~/Library/Application Support/<game>/saves` |
+    /// | Linux | `$XDG_DATA_HOME/<game>/saves`, else `~/.local/share/<game>/saves` |
+    ///
+    /// Resolved from environment variables rather than by adding the
+    /// `directories` crate: that crate pulls `windows-sys`, which Bevy already
+    /// uses through winit, and a normal dependency sharing a crate with the
+    /// engine is how a feature-unification cascade — and a twenty-minute
+    /// rebuild — starts. This is fifteen lines and touches nothing.
+    pub fn for_game(game: &str) -> Self {
+        Self {
+            root: Self::data_dir().join(game).join("saves"),
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn data_dir() -> PathBuf {
+        std::env::var_os("APPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."))
+    }
+
+    #[cfg(target_os = "macos")]
+    fn data_dir() -> PathBuf {
+        std::env::var_os("HOME")
+            .map(|home| PathBuf::from(home).join("Library/Application Support"))
+            .unwrap_or_else(|| PathBuf::from("."))
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    fn data_dir() -> PathBuf {
+        std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
+            .unwrap_or_else(|| PathBuf::from("."))
+    }
+
     pub fn path(&self, slot: u8) -> PathBuf {
         self.root.join(format!("save_{slot}.ron"))
     }
@@ -220,8 +269,21 @@ pub fn write_slot(slots: &SaveSlots, slot: u8, state: SaveState, location: Strin
         .map_err(|e| format!("cannot serialise save: {e}"))?;
     std::fs::create_dir_all(&slots.root)
         .map_err(|e| format!("cannot create {}: {e}", slots.root.display()))?;
+
+    // Write beside the slot, then rename over it. Writing in place means a
+    // crash, a full disk or a lost battery mid-write leaves a truncated file —
+    // and the file it truncates is the player's only copy. Rename is atomic on
+    // both Windows and POSIX, so the slot is either the old save or the new
+    // one, never half of either.
     let path = slots.path(slot);
-    std::fs::write(&path, text).map_err(|e| format!("cannot write {}: {e}", path.display()))
+    let staging = path.with_extension("ron.tmp");
+    std::fs::write(&staging, text)
+        .map_err(|e| format!("cannot write {}: {e}", staging.display()))?;
+    std::fs::rename(&staging, &path).map_err(|e| {
+        // Leave no litter behind if the rename is what failed.
+        let _ = std::fs::remove_file(&staging);
+        format!("cannot replace {}: {e}", path.display())
+    })
 }
 
 pub fn read_slot(slots: &SaveSlots, slot: u8) -> Result<SaveFile, String> {

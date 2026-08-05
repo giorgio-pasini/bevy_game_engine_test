@@ -164,20 +164,94 @@ struct PresentationCheck {
     text_speed: f32,
 }
 
-/// Image and audio extensions Bevy can actually decode, given the features
-/// enabled for `bevy` in `games/Cargo.toml`.
+/// Extensions that arrive with the feature **profiles** rather than by being
+/// listed, so they are enabled as long as those profiles are:
+/// `common_api` brings `png` and `hdr`, and `audio = ["bevy_audio", "vorbis"]`
+/// brings Ogg Vorbis.
 ///
-/// A build script cannot inspect another crate's feature flags, so this list is
-/// maintained by hand — **keep it in step with the manifest**. It exists because
-/// checking only that a file is present let a `.webp` through while the `webp`
-/// feature was off, which fails at runtime with a decode error rather than at
-/// build time.
-const DECODABLE: &[&str] = &[
-    // images
-    "png", "jpg", "jpeg", "webp", "bmp", "tga", "qoi", "gif", "hdr",
-    // audio
-    "ogg", "mp3", "wav",
+/// Verified against `bevy/Cargo.toml` at 0.19.0. Deriving the list purely from
+/// the explicit features would have silently dropped `.ogg` — which is every
+/// piece of music in the game.
+const PROFILE_CODECS: &[&str] = &["png", "hdr", "ogg"];
+
+/// Which opt-in codec feature enables which file extensions.
+///
+/// Only the mapping is hand-written; **which of these are switched on is read
+/// from the workspace manifest**, so the check describes the engine that was
+/// actually built rather than the engine someone remembered.
+const CODEC_FEATURES: &[(&str, &[&str])] = &[
+    ("jpeg", &["jpg", "jpeg"]),
+    ("webp", &["webp"]),
+    ("bmp", &["bmp"]),
+    ("tga", &["tga"]),
+    ("qoi", &["qoi"]),
+    ("gif", &["gif"]),
+    ("exr", &["exr"]),
+    ("dds", &["dds"]),
+    ("ktx2", &["ktx2"]),
+    ("basis-universal", &["basis"]),
+    ("mp3", &["mp3"]),
+    ("wav", &["wav"]),
+    ("flac", &["flac"]),
 ];
+
+/// The extensions this build of Bevy can decode.
+///
+/// Filled once in `main`. It exists because checking only that a file is
+/// *present* let a `.webp` through while the `webp` feature was off — which
+/// fails at runtime with a decode error rather than at build time. That guard
+/// then spent a fortnight one edit away from describing the wrong engine,
+/// because it was a hand-copied list with a comment asking to keep it in step.
+static DECODABLE: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
+
+fn decodable() -> &'static BTreeSet<String> {
+    DECODABLE.get().expect("set at the top of main")
+}
+
+/// Reads `games/Cargo.toml` and works out what the engine can decode.
+fn derive_decodable(manifest_dir: &Path) -> BTreeSet<String> {
+    let path = manifest_dir.join("../../Cargo.toml");
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+        fail(&format!(
+            "cannot read the workspace manifest at {}: {e}",
+            path.display()
+        ))
+    });
+    let doc: toml::Value = toml::from_str(&text)
+        .unwrap_or_else(|e| fail(&format!("{}: not valid TOML: {e}", path.display())));
+
+    let features = doc
+        .get("workspace")
+        .and_then(|w| w.get("dependencies"))
+        .and_then(|d| d.get("bevy"))
+        .and_then(|b| b.get("features"))
+        .and_then(|f| f.as_array())
+        .unwrap_or_else(|| {
+            fail(&format!(
+                "{}: no workspace.dependencies.bevy.features array — this check derives the \
+                 decodable formats from it, and cannot fall back to a guess",
+                path.display()
+            ))
+        });
+
+    let mut out: BTreeSet<String> = PROFILE_CODECS.iter().map(|s| s.to_string()).collect();
+    for feature in features.iter().filter_map(|f| f.as_str()) {
+        if let Some((_, extensions)) = CODEC_FEATURES.iter().find(|(name, _)| *name == feature) {
+            out.extend(extensions.iter().map(|e| e.to_string()));
+        }
+    }
+
+    // Guard the guard: a parse that quietly matched nothing would make every
+    // asset look undecodable, or — worse, if this were ever relaxed — make
+    // every asset look fine.
+    if !out.contains("png") {
+        fail(&format!(
+            "{}: derived no `png` support, so the manifest was not understood",
+            path.display()
+        ));
+    }
+    out
+}
 
 #[derive(serde::Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[allow(dead_code)]
@@ -195,6 +269,13 @@ fn main() {
     // Re-run whenever content changes, so edits are re-validated.
     println!("cargo::rerun-if-changed=assets");
     println!("cargo::rerun-if-changed=build.rs");
+    // ...and whenever the engine's feature set changes, since that is what
+    // decides which assets can be decoded at all.
+    println!("cargo::rerun-if-changed=../../Cargo.toml");
+
+    DECODABLE
+        .set(derive_decodable(&manifest))
+        .expect("set exactly once");
 
     let mut scenes: BTreeMap<String, (PathBuf, String, RawScene)> = BTreeMap::new();
 
@@ -893,11 +974,12 @@ fn check_asset_at(assets: &Path, rel: &str, where_: &str) {
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
-    if !DECODABLE.contains(&ext.as_str()) {
+    if !decodable().contains(&ext) {
         fail(&format!(
             "{where_}: asset `{rel}` has extension `.{ext}`, which is not among the formats \
-             enabled for bevy in games/Cargo.toml. Enable the matching feature (and add the \
-             extension to DECODABLE in build.rs), or convert the file. Enabled: {DECODABLE:?}"
+             this build of bevy can decode. Enable the matching feature in \
+             games/Cargo.toml, or convert the file. Currently decodable: {:?}",
+            decodable()
         ));
     }
 }

@@ -11,6 +11,8 @@ and get rewritten freely; this file is what preserves the history behind them.
 
 | Date | Decision | Entry |
 | --- | --- | --- |
+| 2026-08-05 | The frame has one stated order — five system sets, not three unordered chains | [2026-08-05](#2026-08-05) |
+| 2026-08-05 | Saves live in a per-user OS directory, written atomically; the library takes it as a resource | [2026-08-05](#2026-08-05) |
 | 2026-08-05 | Saves store what cannot be derived — including the playing track, excluding cached fields | [2026-08-05](#2026-08-05) |
 | 2026-08-05 | Hotspots are options with a colour, audited against the actual pixels at build time | [2026-08-05](#2026-08-05) |
 | 2026-08-05 | The cast is re-established per scene, like the background — **not** persistent like music | [2026-08-05](#2026-08-05) |
@@ -217,6 +219,143 @@ The exploration roadmap is **complete** — stages 1 to 5 are all in. Remaining 
 profile rather than the save. Beyond that the milestone table's outstanding
 entries are backlog, auto-advance and skip (9), settings (10), transitions (11),
 and gallery/achievements/voice (12).
+
+### Later still: hardening, after the stages
+
+Five weaknesses a working game was hiding. Nothing was broken; this is what
+"better structure, identify critical issues" turned out to mean.
+
+#### Bevy's ambiguity detector found 43 pairs — and a bug in the architecture
+
+`ScheduleBuildSettings { ambiguity_detection: LogLevel::Warn }` on the `Update`
+schedule reports systems that touch the same data with **no order between
+them**. Off by default, so it has to be asked for.
+
+It reported **43 pairs, 42 of them ours** — because the engine registered three
+separate `Update` chains (presentation, story, exploration), each internally
+ordered and mutually unordered.
+
+The interesting part was not the indeterminacy. It was that the presentation
+chain had been registered **first**, so the reconcilers read `Stage` *before* the
+logic wrote it: every frame drew the previous frame's state. Invisible at 60fps,
+and the exact opposite of the rule the crate is built on.
+
+Fixed structurally rather than with ordering patches — five named sets, chained:
+
+```
+Session -> Story -> Explore -> Persist -> Present
+```
+
+Reading those five names is now the answer to "what happens in a frame". **43
+pairs became 1**, and the survivor is `handle_ui_buttons` against Bevy's own
+`TerminalCtrlCHandlerPlugin::exit_on_flag`, both writing `AppExit` messages —
+harmless, engine-owned, and deliberately left rather than papered over by
+coupling our plugin to an engine internal.
+
+The parallelism given up is nominal: nearly every one of these systems touches
+`Stage` or `StoryState`, so they could never have run concurrently anyway.
+
+#### `vn_core` had no tests of its own
+
+All 20 tests lived in `demo_game` and ran against one game's scenes. A library
+validated only through its demo cannot catch a regression that demo does not
+happen to exercise, and its tests break whenever the story is edited.
+
+Now 15 tests inside `vn_core`, against a **synthetic** three-scene game that
+exists purely to be awkward. Two findings from writing them:
+
+- The fixture's guarded branch option was originally *last*, so the surviving
+  option kept index 0 — and a bug that renumbered options after filtering would
+  have been invisible. Moving the guarded option first made the test able to
+  fail. **Fixture order is part of a test's strength.**
+- An assertion that black never selects a hotspot could not fail, because
+  nothing in the fixture claimed black. Adding a deliberately mis-authored
+  black region — the thing `build.rs` forbids in real content — turned a
+  decorative assertion into a real one.
+
+#### The input layer is now tested, including the cursor
+
+This is where **every engine bug in this project has lived**, and it had no
+tests at all. Four now, all driving the app as a player does:
+
+- **Keyboard** via `KeyboardInput` *messages*. Writing to `ButtonInput` directly
+  does not work — `keyboard_input_system` clears it in `PreUpdate`, so a press
+  written from outside the schedule is wiped before any system sees it.
+- **Buttons** by inserting `Interaction::Pressed`, which counts as a change and
+  so satisfies `Changed<Interaction>`.
+- **The full hotspot path** — cursor position → camera → design space → lookup
+  pixel → option → click. This was the one expected to fail: it needs a camera,
+  and cameras are normally filled in by the render app. It worked, because
+  `Camera.computed`, `RenderTargetInfo` and `Window::set_cursor_position` are
+  all public. Two things are fabricated (the camera's computed values, and the
+  lookup image, since there is no PNG loader headlessly), and the cursor
+  position is derived by asking *the same camera* where a known world point
+  lands — so the test depends on the projection being self-consistent rather
+  than on having re-derived Bevy's matrix correctly.
+
+#### Save location, decided for production rather than for dev
+
+Saves were landing in whatever directory the process was launched from. The
+question that reframed it: *how would this be managed in a release?*
+
+Answer: a **per-user OS data directory** — `%APPDATA%\<game>\saves` and its
+equivalents — because the install directory is not user-writable on Windows, a
+machine has several users, and cloud sync needs a stable path outside the
+install.
+
+Resolved from environment variables rather than by adding the `directories`
+crate: that crate pulls `windows-sys`, which Bevy already uses through winit,
+and a *normal* dependency sharing a crate with the engine is how a
+feature-unification cascade starts. Fifteen lines instead.
+
+Saves are now written to a staging file and **renamed over** the slot. Writing in
+place means a crash mid-write truncates the player's only copy; rename is atomic
+on Windows and POSIX both.
+
+#### The decodable-format list now reads the manifest
+
+`build.rs` kept a hand-copied list of decodable extensions with a comment asking
+the author to keep it in step with `games/Cargo.toml`. That guard exists
+*because* a `.webp` slipped through once, so a guard that can silently describe
+the wrong engine had to go. It now parses the workspace manifest — `toml` as a
+build-dependency, feature-isolated like `image`, no engine rebuild.
+
+One trap on the way: deriving purely from the explicit feature list would have
+**dropped `.ogg`**, which is every piece of music in the game. Codecs also arrive
+from *profiles* — `common_api` brings `png` and `hdr`, and
+`audio = ["bevy_audio", "vorbis"]` brings Ogg. Verified against `bevy/Cargo.toml`
+rather than assumed, and the profile-implied set is now a named constant with
+that citation.
+
+Verified by pointing the derivation at a fixture manifest with `webp` removed:
+
+```
+asset `backgrounds/mountains.webp` has extension `.webp`, which is not among
+the formats this build of bevy can decode. ... Currently decodable:
+{"bmp", "gif", "hdr", "jpeg", "jpg", "mp3", "ogg", "png", "qoi", "tga", "wav"}
+```
+
+A fixture rather than a real feature change on purpose: removing `webp` from the
+manifest and putting it back costs two full engine rebuilds, ~40 minutes, for
+the same evidence. What this does not prove is that cargo would actually disable
+the feature — but that is cargo's job, not this guard's.
+
+#### Numbers
+
+| | |
+| --- | --- |
+| Tests | 39 — 15 `vn_core` unit, 22 `demo_game` app/content, 2 documentation alignment |
+| Ambiguous system pairs | 43 → 1 (the survivor is Bevy's own, and benign) |
+| New guarantees verified by deletion | 10, each taking down exactly the expected test |
+| Incremental rebuild | ~40s; `toml` added as a build-dep with no engine rebuild |
+
+#### Changed in the other documents
+
+- Guide: *state the frame's order as sets*; *a library's tests must not depend
+  on one consumer's content*; *drive input as messages*; *resolve user paths from
+  the environment*; *write saves atomically*; *make fixtures able to fail*.
+- `DESIGN.md`: Part 3 gains the real save location and the atomic write; Part 8b
+  loses the completed items; a new Part 2.5 on the frame's order.
 
 ---
 

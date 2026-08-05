@@ -14,10 +14,15 @@
 //! which is exactly what they should do.
 
 use bevy::asset::RenderAssetUsages;
+use bevy::camera::RenderTargetInfo;
 use bevy::ecs::system::RunSystemOnce;
+use bevy::input::keyboard::{Key, KeyboardInput};
+use bevy::input::mouse::MouseButtonInput;
+use bevy::input::ButtonState;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::state::app::StatesPlugin;
+use bevy::window::WindowResolution;
 use vn_core::prelude::*;
 // Not in the prelude: it is an internal presentation detail, but asserting on it
 // is precisely how these tests check "would the player see buttons?".
@@ -103,6 +108,37 @@ fn advance_once(app: &mut App) {
     app.world_mut()
         .run_system_once(step_story)
         .expect("the story should advance");
+}
+
+/// Presses and releases a key **through the message pipeline**.
+///
+/// Writing to `ButtonInput` directly does not work: `keyboard_input_system`
+/// clears it in `PreUpdate`, so a press written from outside the schedule is
+/// wiped before any system sees it. Sending the message is what a window would
+/// do, and it exercises the same path.
+fn tap_key(app: &mut App, key_code: KeyCode, logical_key: Key) {
+    for state in [ButtonState::Pressed, ButtonState::Released] {
+        app.world_mut().write_message(KeyboardInput {
+            key_code,
+            logical_key: logical_key.clone(),
+            state,
+            text: None,
+            repeat: false,
+            window: Entity::PLACEHOLDER,
+        });
+        app.update();
+    }
+}
+
+fn click_mouse(app: &mut App) {
+    for state in [ButtonState::Pressed, ButtonState::Released] {
+        app.world_mut().write_message(MouseButtonInput {
+            button: MouseButton::Left,
+            state,
+            window: Entity::PLACEHOLDER,
+        });
+        app.update();
+    }
 }
 
 fn step_story(
@@ -524,6 +560,218 @@ fn a_load_restores_the_soundtrack() {
         capture_now(&fresh).stack,
         expected.stack,
         "starting a run over the top of a pending load threw the save away"
+    );
+}
+
+// ------------------------------------------------------------- the input --
+//
+// Everything below drives the app the way a player does. This is the layer
+// where every engine bug in this project has lived, and until now the only
+// thing testing it was somebody playing.
+
+#[test]
+fn f5_saves_and_f9_loads_through_the_real_key_bindings() {
+    let mut app = harness();
+    settle(&mut app);
+    go(&mut app, AppState::Playing);
+    for _ in 0..3 {
+        advance_once(&mut app);
+    }
+    let saved = capture_now(&app);
+
+    tap_key(&mut app, KeyCode::F5, Key::F5);
+    assert!(
+        slots(&app).exists(1),
+        "F5 should have written slot 1, and nothing else does"
+    );
+
+    // Wander off, then come back with F9.
+    app.world_mut()
+        .resource_mut::<StoryState<scenes::SceneId>>()
+        .stack
+        .truncate(1);
+    tap_key(&mut app, KeyCode::F9, Key::F9);
+    settle(&mut app);
+
+    assert_eq!(
+        capture_now(&app).stack,
+        saved.stack,
+        "F9 should have restored the stack that F5 wrote"
+    );
+}
+
+#[test]
+fn saving_is_refused_from_the_menu() {
+    let mut app = harness();
+    settle(&mut app);
+    tap_key(&mut app, KeyCode::F5, Key::F5);
+    assert!(
+        !slots(&app).exists(1),
+        "there is no run to save from the menu, so no file should appear"
+    );
+}
+
+#[test]
+fn pressing_an_option_button_applies_that_option() {
+    let mut app = harness();
+    settle(&mut app);
+    go(&mut app, AppState::Playing);
+    app.world_mut()
+        .resource_mut::<StoryState<scenes::SceneId>>()
+        .push_place("ridge".to_string());
+    go(&mut app, AppState::Exploring);
+
+    // The button that walks to the cairn, found by what it does rather than by
+    // position, so reordering the place file does not silently retarget this.
+    let places = scenes::places();
+    let wanted = places
+        .get("ridge")
+        .unwrap()
+        .options
+        .iter()
+        .position(|o| matches!(&o.effect, Effect::GoTo(t) if t == "cairn"))
+        .expect("the ridge should offer a way to the cairn");
+
+    let button = app
+        .world_mut()
+        .query::<(Entity, &PlaceOptionButton)>()
+        .iter(app.world())
+        .find(|(_, b)| b.0 == wanted)
+        .map(|(e, _)| e)
+        .expect("that option should be on screen as a button");
+
+    // Inserting counts as a change, which is what `Changed<Interaction>` wants.
+    app.world_mut()
+        .entity_mut(button)
+        .insert(Interaction::Pressed);
+    settle(&mut app);
+
+    assert_eq!(
+        app.world()
+            .resource::<StoryState<scenes::SceneId>>()
+            .current_place(),
+        Some("cairn"),
+        "pressing the button should have moved the player"
+    );
+}
+
+/// The full hotspot path: cursor position → camera → design space → lookup
+/// pixel → option → click.
+///
+/// Two things are fabricated, because no render app is running: the camera's
+/// computed values, and the lookup image (there is no PNG loader here). The
+/// cursor position is derived by asking the *same camera* where a known world
+/// point lands, so the test depends on the projection being self-consistent
+/// rather than on having re-derived Bevy's matrix correctly — what is under
+/// test is the pipeline, not the projection maths.
+#[test]
+fn a_cursor_over_a_region_hovers_it_and_a_click_takes_it() {
+    let mut app = harness();
+    settle(&mut app);
+    go(&mut app, AppState::Playing);
+    app.world_mut()
+        .resource_mut::<StoryState<scenes::SceneId>>()
+        .push_place("valley".to_string());
+    go(&mut app, AppState::Exploring);
+
+    // A window, so there is a cursor to read at all.
+    let window = app
+        .world_mut()
+        .spawn(Window {
+            resolution: WindowResolution::new(1920, 1080),
+            ..default()
+        })
+        .id();
+    settle(&mut app);
+
+    // The camera already exists (spawned at startup); it just has none of the
+    // values the render app would have filled in.
+    let camera_entity = app
+        .world_mut()
+        .query_filtered::<Entity, With<Camera>>()
+        .single(app.world())
+        .expect("the letterbox camera");
+    {
+        let mut camera = app.world_mut().get_mut::<Camera>(camera_entity).unwrap();
+        camera.computed.target_info = Some(RenderTargetInfo {
+            physical_size: UVec2::new(1920, 1080),
+            scale_factor: 1.0,
+        });
+        // Only the x/y extents matter for a 2D unprojection; the depth
+        // convention does not enter into it.
+        camera.computed.clip_from_view = Mat4::orthographic_rh(
+            -DESIGN_W * 0.5,
+            DESIGN_W * 0.5,
+            -DESIGN_H * 0.5,
+            DESIGN_H * 0.5,
+            1000.0,
+            -1000.0,
+        );
+    }
+
+    // A lookup whose left half is the cairn's colour and right half the ledge's.
+    let places = scenes::places();
+    let valley = places.get("valley").unwrap();
+    let regions: Vec<Rgb> = valley.options.iter().filter_map(|o| o.region).collect();
+    let (left, right) = (regions[0], regions[1]);
+    let mut data = Vec::new();
+    for c in [left, right] {
+        data.extend_from_slice(&[c.0, c.1, c.2, 255]);
+    }
+    let handle = app.world_mut().resource_mut::<Assets<Image>>().add(Image::new(
+        Extent3d {
+            width: 2,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        data,
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::MAIN_WORLD,
+    ));
+    {
+        let mut lookup = app.world_mut().resource_mut::<MapLookup>();
+        lookup.place = Some("valley".to_string());
+        lookup.handle = Some(handle);
+    }
+
+    // Point at the middle of the left half — design x = -1/4 of the width.
+    let target = Vec3::new(-DESIGN_W * 0.25, 0.0, 0.0);
+    let cursor = {
+        let camera = app.world().get::<Camera>(camera_entity).unwrap();
+        camera
+            .world_to_viewport(&GlobalTransform::IDENTITY, target)
+            .expect("the design point should be on screen")
+    };
+    app.world_mut()
+        .get_mut::<Window>(window)
+        .unwrap()
+        .set_cursor_position(Some(cursor));
+    settle(&mut app);
+
+    let expected = valley
+        .options
+        .iter()
+        .position(|o| o.region == Some(left))
+        .unwrap();
+    assert_eq!(
+        app.world().resource::<HoveredHotspot>().0,
+        Some(expected),
+        "the cursor is over the first region, so that option should be hovered"
+    );
+
+    // And clicking it must actually go there.
+    let Effect::GoTo(destination) = valley.options[expected].effect.clone() else {
+        panic!("the first region should be a movement option");
+    };
+    click_mouse(&mut app);
+    settle(&mut app);
+    assert_eq!(
+        app.world()
+            .resource::<StoryState<scenes::SceneId>>()
+            .current_place(),
+        Some(destination.as_str()),
+        "clicking a hovered region should travel there"
     );
 }
 

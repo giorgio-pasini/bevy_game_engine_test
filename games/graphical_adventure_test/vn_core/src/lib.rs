@@ -14,6 +14,9 @@ pub mod present;
 pub mod save;
 pub mod story;
 
+#[cfg(test)]
+mod tests;
+
 pub mod prelude {
     pub use crate::letterbox::*;
     pub use crate::map::*;
@@ -21,13 +24,42 @@ pub mod prelude {
     pub use crate::present::{DESIGN_H, DESIGN_W};
     pub use crate::save::*;
     pub use crate::story::*;
-    pub use crate::VnPlugin;
+    pub use crate::{VnPlugin, VnSet};
 }
 
 use place::*;
 use present::*;
 use save::*;
 use story::*;
+
+/// The shape of a frame, stated once.
+///
+/// Before this existed the engine registered three separate `Update` chains —
+/// presentation, story, exploration — each internally ordered and with **no
+/// order between them**. Bevy's ambiguity detector reported 42 pairs of our own
+/// systems with indeterminate execution order, and one consequence was
+/// architectural rather than cosmetic: the presentation chain was registered
+/// first, so the reconcilers read `Stage` *before* the logic wrote it. Every
+/// frame drew the previous frame's state.
+///
+/// Reading these five names in order is now the answer to "what happens in a
+/// frame", and it restores the rule the whole crate is built on: state first,
+/// screen after.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub enum VnSet {
+    /// The session rather than the story: menu buttons, saving, loading.
+    Session,
+    /// The narrative phase. Runs only in [`AppState::Playing`], which is also
+    /// what makes `PlayMode` — a sub-state — safe to read here.
+    Story,
+    /// The exploration phase. Runs only in [`AppState::Exploring`].
+    Explore,
+    /// Snapshotting, after the frame's decisions are made — so a save captures
+    /// what the player just did, not what they had done a frame ago.
+    Persist,
+    /// Reconciling the screen toward whatever the sets above decided.
+    Present,
+}
 
 /// Add this, supplying the game's [`Script`] and [`Locale`].
 pub struct VnPlugin<S: SceneKey> {
@@ -102,13 +134,63 @@ impl<S: SceneKey> Plugin for VnPlugin<S> {
         // the background, cast and music. No bespoke teardown.
         .add_systems(OnExit(AppState::Playing), clear_visuals)
         .add_systems(OnEnter(AppState::MainMenu), stop_everything)
-        // Exploration. The view is rebuilt by `refresh_place_view` whenever the
-        // place changes, since moving between rooms does not change AppState.
+        .add_systems(OnExit(AppState::Exploring), clear_visuals)
+        .add_systems(OnEnter(PlayMode::AwaitingChoice), spawn_choices)
+        .add_systems(OnExit(PlayMode::AwaitingChoice), despawn_choices)
+        .add_systems(OnEnter(PlayMode::Finished), spawn_end_screen)
+        // One total order for the frame. `Story` and `Explore` are mutually
+        // exclusive by run condition, so their relative order never matters —
+        // but stating it costs nothing and leaves no pair undefined.
         //
-        // Ordered read → decide → apply: the lookup image follows the place, the
-        // cursor is resolved against it, the two input systems say what was
-        // picked, and one system applies it. Running the applier last is what
-        // lets a click be handled in the frame it happens.
+        // The parallelism given up is nominal: nearly every system here touches
+        // `Stage` or `StoryState`, so Bevy could not have run them concurrently
+        // anyway. What is bought is a frame that reads in one direction.
+        .configure_sets(
+            Update,
+            (
+                VnSet::Session,
+                VnSet::Story.run_if(in_state(AppState::Playing)),
+                VnSet::Explore.run_if(in_state(AppState::Exploring)),
+                VnSet::Persist,
+                VnSet::Present,
+            )
+                .chain(),
+        )
+        // Session: menu buttons, then load ordered request -> read -> install.
+        // `apply_pending_load` stands down in the menu so `restart` cannot
+        // reset a run that is being loaded — see its own comment.
+        .add_systems(
+            Update,
+            (
+                handle_ui_buttons,
+                request_load_on_key,
+                read_requested_save,
+                apply_pending_load::<S>.run_if(not(in_state(AppState::MainMenu))),
+            )
+                .chain()
+                .in_set(VnSet::Session),
+        )
+        // Story. `reveal_text` and `draw_dialogue` read `PlayMode`, a sub-state
+        // that does not exist outside `Playing` — the set's run condition is
+        // what keeps reading it legal.
+        .add_systems(
+            Update,
+            (
+                advance_on_input::<S>,
+                reveal_text,
+                choose_on_click::<S>,
+                draw_dialogue,
+            )
+                .chain()
+                .in_set(VnSet::Story),
+        )
+        // Exploration, ordered read → decide → apply: the lookup image follows
+        // the place, the cursor is resolved against it, the two input systems
+        // say what was picked, and one system applies it. Running the applier
+        // last is what lets a click be handled in the frame it happens.
+        //
+        // The view is rebuilt by `refresh_place_view` whenever the place
+        // changes, since moving between rooms does not change `AppState`.
         .add_systems(
             Update,
             (
@@ -121,14 +203,12 @@ impl<S: SceneKey> Plugin for VnPlugin<S> {
                 apply_picked_option::<S>,
             )
                 .chain()
-                .run_if(in_state(AppState::Exploring)),
+                .in_set(VnSet::Explore),
         )
-        .add_systems(OnExit(AppState::Exploring), clear_visuals)
-        .add_systems(OnEnter(PlayMode::AwaitingChoice), spawn_choices)
-        .add_systems(OnExit(PlayMode::AwaitingChoice), despawn_choices)
-        .add_systems(OnEnter(PlayMode::Finished), spawn_end_screen)
-        // Reconcilers and the letterbox run in every state, so leaving `Playing`
-        // actually tears the screen down.
+        .add_systems(Update, save_on_key::<S>.in_set(VnSet::Persist))
+        // Presentation runs in every state, so leaving `Playing` actually tears
+        // the screen down — and now runs *after* the logic, so what is drawn is
+        // this frame's state rather than last frame's.
         .add_systems(
             Update,
             (
@@ -141,30 +221,11 @@ impl<S: SceneKey> Plugin for VnPlugin<S> {
                 speaker_cue,
                 sync_music,
                 highlight_choices,
-                handle_ui_buttons,
-                // Save and load, ordered request -> read -> install. Placed
-                // after the buttons so a click on "Continue" is served in the
-                // frame it happens.
-                request_load_on_key,
-                read_requested_save,
-                apply_pending_load::<S>.run_if(not(in_state(AppState::MainMenu))),
-                save_on_key::<S>,
                 tick_toast,
                 draw_toast,
             )
-                .chain(),
-        )
-        // Story systems exist only while playing.
-        .add_systems(
-            Update,
-            (
-                advance_on_input::<S>,
-                reveal_text,
-                choose_on_click::<S>,
-                draw_dialogue,
-            )
                 .chain()
-                .run_if(in_state(AppState::Playing)),
+                .in_set(VnSet::Present),
         );
     }
 }
