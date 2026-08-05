@@ -52,12 +52,19 @@ pub fn scene_of_name(name: &str) -> Option<SceneId> {
     SceneId::from_stem(name)
 }
 
+/// The reverse, used to write save files in terms of scene *names* rather than
+/// enum ordinals — so a save survives scenes being added or reordered.
+pub fn scene_name_of(id: SceneId) -> &'static str {
+    id.stem()
+}
+
 /// Menu chrome. Not story content, so it stays in Rust rather than becoming a
 /// scene file.
 pub fn text_en(key: TextKey) -> &'static str {
     match key.0 {
         "menu.title" => "The Golden Golem",
         "menu.begin" => "Begin",
+        "menu.continue" => "Continue",
         "menu.quit" => "Quit",
         "menu.return" => "Return to the menu",
         _ => MISSING,
@@ -190,7 +197,13 @@ mod tests {
 
     #[test]
     fn menu_chrome_resolves() {
-        for k in ["menu.title", "menu.begin", "menu.quit", "menu.return"] {
+        for k in [
+            "menu.title",
+            "menu.begin",
+            "menu.continue",
+            "menu.quit",
+            "menu.return",
+        ] {
             assert_ne!(text_en(TextKey(k)), MISSING, "missing menu string `{k}`");
         }
     }

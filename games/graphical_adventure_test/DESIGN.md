@@ -176,9 +176,17 @@ Violate this rule and each of those becomes a bespoke, bug-prone subsystem.
 
 ### 2.2 Plugin decomposition
 
-`vn_core` exposes one plugin per concern, plus a `VnCorePlugin` that adds them
-all. Games depending on the library can therefore replace one piece without
-forking the whole engine.
+> **NOT BUILT THIS WAY.** `vn_core` exposes **one** plugin, `VnPlugin<S>`,
+> parameterised by the game's scene enum and taking the script, locale, cast,
+> tuning, places and the two scene-name lookups. There is no `VnCorePlugin` and
+> none of the twelve plugins below exist.
+>
+> The decomposition was not rejected — it was never reached. Splitting one
+> plugin into twelve buys the ability to replace a piece without forking, and
+> nothing has yet wanted to replace a piece. Doing it now would be the
+> over-engineering Part 4 warns about, so the table stands as the shape to split
+> *along* when a second game actually needs it. The module boundaries already
+> follow it: `story`, `place`, `map`, `present`, `save`, `letterbox`.
 
 | Plugin | Owns |
 | --- | --- |
@@ -303,6 +311,21 @@ pub enum Condition {
 
 ### 2.4 State machine
 
+> **SUPERSEDED 2026-08-05.** The mechanism is exactly as sketched — `States` plus
+> `SubStates`, registered with `init_state` and `add_sub_state` — but neither
+> list of variants survived contact. The truth is in `vn_core/src/story.rs`:
+>
+> - `AppState` is `MainMenu`, `Playing`, `Exploring`. `Boot` and `Loading` were
+>   never needed (the content is embedded, so there is nothing to wait for);
+>   `Paused` and `Gallery` are unbuilt features, and `Exploring` was not
+>   foreseen at all.
+> - `PlayMode` is `Revealing`, `AwaitingInput`, `AwaitingChoice`, `Finished`.
+>   `Auto` and `Skipping` belong to milestone 9 and do not exist yet.
+>
+> Note what the alignment tests could **not** catch: these lists live in a fenced
+> code block, and the enum-variant check only samples single-backticked text. A
+> sketch is exactly where drift hides.
+
 Verified against `../../bevy/examples/state/sub_states.rs`:
 
 ```rust
@@ -353,6 +376,27 @@ older tutorials show.
 ---
 
 ## Part 3 — Save/load, argued
+
+> **IMPLEMENTED 2026-08-05**, in `vn_core/src/save.rs`. The argument below held
+> completely — snapshot rather than world serialisation, replay rather than
+> stored presentation — and the shape changed in four ways:
+>
+> - the cursor is a **control stack**, so the snapshot is `Vec<SavedFrame>`
+>   rather than one `scene` + `step`;
+> - scenes are stored **by name**, not as the generated enum, so a save survives
+>   content being added or reordered;
+> - the file carries **one piece of apparent presentation state** — the playing
+>   track. Music is *ambient*: the scene that started it may be several jumps in
+>   the past, so replay cannot reach it. The rule is not "never save
+>   presentation", it is **save exactly what cannot be derived**;
+> - `seen` is not implemented. It belongs to the profile, not the save — see
+>   Part 8b.
+>
+> One correction the argument did not anticipate: `advance` steps *past* a line
+> before handing control back, so a saved cursor points at the line **after** the
+> one on screen. Restoring it verbatim silently skips a line.
+> `StoryState::rewind_to_current_line` corrects it, and the round-trip test
+> below is what exposed it.
 
 ### The recommendation
 
@@ -415,7 +459,7 @@ Store separately, because their lifetimes differ:
 
 | File | Contents | Lifetime |
 | --- | --- | --- |
-| `save_<n>.ron` | `StoryState` + metadata + thumbnail path | Per slot |
+| `save_<n>.ron` | `StoryState` + metadata (**no thumbnail** — it needs render-to-texture; slot 1 only so far) | Per slot |
 | `settings.ron` | Volumes, text speed, language, window mode | Global |
 | `profile.ron` | Seen lines, gallery unlocks, achievements | Global, survives all saves |
 
@@ -519,7 +563,7 @@ an error reporter and an editor integration is a larger project than the game.
 | --- | --- | --- |
 | Enum IDs for every asset and scene | A generic `AssetId<T>` abstraction | Enums already give compile-checking |
 | Flat `Vec<Step>` per scene | A general graph with arbitrary edges | Branching between scenes covers real stories |
-| Five-variant `Condition` | An expression parser with arithmetic | Flags and counters cover essentially every VN |
+| Seven-variant `Condition` (five as designed, plus the two item guards) | An expression parser with arithmetic | Flags, counters and inventory cover essentially every VN |
 | One `ScreenEffect` enum | A tweening/easing framework | Three effects do not need a framework |
 | Direct plugin wiring | A plugin dependency-resolution system | A dozen plugins register fine by hand |
 | `BTreeMap<VarId, Value>` | A typed variable schema with migrations | Save migration is a real problem — but only once players exist |
@@ -673,12 +717,11 @@ Each milestone ends in something runnable. Never integrate big-bang.
 
 > **STATUS as of 2026-08-04.** Done: 1 (workspace), 2 (data model — now RON files
 > plus a `build.rs` generator), 3 (stage), 4 (dialogue and typewriter),
-> 6 (choices and branching), 7 (audio), 13 (validation — build guards, a
-> content-graph walk, and headless app tests).
+> 6 (choices and branching), 7 (audio), 8 (save/load, across the control stack),
+> 13 (validation — build guards, a content-graph walk, and headless app tests).
 > Superseded: 5 (RON localisation — prose is inline instead).
-> Outstanding: 8 (save/load, now across a control stack), 9 (backlog, auto,
-> skip), 10 (settings), 11 (transitions and effects), 12 (gallery, achievements,
-> voice).
+> Outstanding: 9 (backlog, auto, skip), 10 (settings), 11 (transitions and
+> effects), 12 (gallery, achievements, voice).
 >
 > **Added since, not in this table:** the exploration phase — control stack,
 > places, exits, actions, inventory conditions, and map hotspots (Part 6b). Its
@@ -783,9 +826,15 @@ through one styling helper.
 
 ### Stages still outstanding
 
-5. Save/load across the control stack — designed in Part 3; `rebuild_stage`
-   already performs the bottom-up replay a restore needs, so what is left is
-   serialisation, slot files, and a save→load→save round-trip assertion.
+None. The exploration roadmap is complete; what remains below is the wider
+milestone table in Part 7.
+
+### ~~Stage 5, save/load~~ — done 2026-08-05
+
+F5 saves, F9 loads, the menu offers **Continue** when a slot exists. The file
+carries the control stack, flags, items and the playing track; everything else
+is replayed. See Part 3, which now describes what was built rather than what was
+planned.
 
 ### ~~Stage 3, inventory~~ — done 2026-08-04
 
@@ -795,16 +844,20 @@ requires every item a condition demands to be granted somewhere.
 
 ### ~~Stage 4, map hotspots~~ — done 2026-08-05
 
-Colour-keyed lookup images; see Part 6b. Six new build guards, each verified by
-breaking it, plus two headless tests. Placeholder art is generated by
-`tools/mapgen`.
+Colour-keyed lookup images; see Part 6b. The hotspot audit in `build.rs` rejects
+eleven distinct conditions; six of them — including the anti-aliasing and
+minimum-area checks — were verified by deliberately breaking them. Plus two
+headless tests. Placeholder art is generated by `tools/mapgen`.
 
 ### ~~Headless app tests~~ — done 2026-08-04
 
-Built: `demo_game/src/app_tests.rs`, five tests running the real `App` headlessly
-in 0.07s. They assert the app reaches the menu, that entering `Playing` leaves a
-line *and* a background on screen, that a place draws its options, that returning
-from a called scene redraws them, and that music survives a phase change.
+Built: `demo_game/src/app_tests.rs`, now **eleven** tests running the real `App`
+headlessly in 0.17s. They assert the app reaches the menu, that entering
+`Playing` leaves a line *and* a background on screen, that a place draws its
+options, that returning from a called scene redraws them, that music survives a
+phase change, that a map place draws a hotspot label and no buttons, that a
+sampled region selects the option that declared it, and four covering save and
+load.
 
 Verified by breaking the view and confirming they fail.
 

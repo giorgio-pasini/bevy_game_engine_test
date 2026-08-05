@@ -25,7 +25,8 @@ bevytest_documentation/        General findings (this is the research output)
 games/                         Cargo workspace
   snake/                       2D game — see its CLAUDE.md
   graphical_adventure_test/    Visual novel + point-and-click — see its DESIGN.md
-    vn_core/                   engine as plugins (story, places, presentation)
+    vn_core/                   the engine (story, places, map hotspots,
+                               presentation, save/load) as one Bevy plugin
     demo_game/                 demo consuming it
       assets/scenes/*.ron        narrative, prose inline
       assets/places/*.ron        explorable locations

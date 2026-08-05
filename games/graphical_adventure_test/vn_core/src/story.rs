@@ -420,6 +420,32 @@ impl<S: SceneKey> StoryState<S> {
         self.stack.push(Frame::Explore { place });
     }
 
+    /// Puts the cursor back onto the line that was on screen.
+    ///
+    /// [`advance`] steps *past* a `Say` or `Narrate` before returning, so a
+    /// saved cursor points at the line *after* the one the player was reading.
+    /// Restoring without this correction silently skips a line — and it is the
+    /// reason a save→load→save round-trip comes back byte-identical rather than
+    /// drifting one step forward every time.
+    ///
+    /// A `Choices` step deliberately does not advance the cursor: the player's
+    /// answer resolves it. A save made at a branch therefore already points at
+    /// the branch and needs no adjustment.
+    pub fn rewind_to_current_line(&mut self) {
+        let Some(here) = self.story_step() else {
+            return; // exploring: nothing was being read
+        };
+        if here == 0 {
+            return;
+        }
+        if matches!(
+            self.current.steps.get(here - 1),
+            Some(Step::Say { .. }) | Some(Step::Narrate { .. })
+        ) {
+            self.set_story_step(here - 1);
+        }
+    }
+
     /// Pops the current frame. Restores the cached scene if the frame beneath is
     /// a story frame. Returns false when the stack empties — the game is over.
     pub fn pop(&mut self, script: &Script<S>) -> bool {

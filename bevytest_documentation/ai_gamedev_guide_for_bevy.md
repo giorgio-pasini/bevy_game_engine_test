@@ -104,6 +104,56 @@ The tell is a variable whose job is to describe something the world already
 knows. Whenever you find one, ask what happens when the world changes without
 telling it — and in an ECS, the world changes without telling anything.
 
+### Save exactly what cannot be derived — no less, and no more
+`[architecture]` — **measured**
+
+"Never put presentation state in a save" is the well-known half of the rule, and
+on its own it produces a game that loads back silent or mis-framed. The sharper
+form falls out of the classification below:
+
+- **derived** — rebuilt by replaying the state you did save. Never stored.
+- **ambient** — cannot be rebuilt, because nothing in the current state records
+  where it came from. **Must** be stored, even though it looks like
+  presentation.
+
+In a visual novel that is one field. Backgrounds and characters are re-derived
+by replaying the stack; the playing track is not, because the scene that started
+it may be three jumps in the past. So the save carries one `Option<String>` of
+apparent presentation state, and it is correct precisely because it is the piece
+replay cannot reach.
+
+Two consequences worth taking:
+
+- **Do not save a cached field.** A cursor's cached scene, a resolved handle, a
+  memoised lookup — all recomputed on load. A save that stores a cache can
+  contradict itself; one that omits it cannot.
+- **Do not replay anything that mutates saved state.** Replay reconstructs the
+  screen only. A replay that re-ran `Set` or `Add` would corrupt a save a little
+  more on every reload — and the corruption compounds, so it surfaces long after
+  the cause.
+
+> Verified by deleting each guarantee in turn and confirming exactly one test
+> went red: the ambient field, the restored flags, and the cursor correction
+> below.
+
+### Assert idempotence, not just success
+`[testing]` — **measured**
+
+For anything that round-trips — save/load, serialise/deserialise, import/export,
+format/parse — the strong test is not "it worked". It is **do it, undo it, do it
+again, and compare**.
+
+One assertion then covers a whole class of defect that individual assertions
+miss, because any drift at all shows up as a difference:
+
+> Measured: `save → load → save` caught the cursor being one step further along
+> each cycle. A save is written *after* the engine has stepped past the line on
+> screen, so restoring it verbatim skipped a line — and the round-trip made that
+> visible as an inequality rather than as a player complaint months later.
+
+Compare state, not the whole file: a timestamp legitimately differs between two
+saves, so keep metadata in its own field and compare the payload.
+
 ### Classify every piece of presentation state: re-established or ambient
 `[bevy]` `[architecture]` — **confirmed**
 
@@ -307,11 +357,22 @@ state.
 > Register asset types by hand with `init_asset` rather than pulling in render
 > plugins.
 >
-> Measured: five such tests run in 0.07s and cover two bugs that had already
-> shipped and been found by hand.
+> Measured: eleven such tests run in 0.17s. They cover two bugs that had already
+> shipped and been found by hand, plus every save/load guarantee — each one
+> verified by deleting it and watching exactly the expected test go red.
 
 Verify them the same way as any other guard: break the thing they watch, confirm
 they fail, revert.
+
+Two things that bite when driving a headless app:
+
+- **Do not write to `ButtonInput` from outside the schedule.** It is cleared in
+  `PreUpdate`, so a press written before `app.update()` is wiped before any
+  system sees it. Call the function the input system calls, and leave input
+  handling to be tested by playing.
+- **When a system must not run before a state transition, say so with a run
+  condition**, not by where it sits in the schedule. `run_if(not(in_state(..)))`
+  survives someone reordering the chain; a position does not.
 
 ### Write validation tests for what the compiler cannot check
 `[rust]` `[ai-workflow]` — **measured**
@@ -483,6 +544,28 @@ one.
 > while the identical problem with characters sat one field away in the same
 > struct, untouched, and shipped. It cost a second bug report from the user for
 > what was, by then, a completely understood failure.
+
+### Numbers rot fastest — write the command beside them
+`[ai-workflow]` — **confirmed**
+
+*Report measurements, not impressions* has a sharp edge: a number in a document
+is correct on the day it is written and silently wrong afterwards. In one audit,
+**five of eleven** misalignments were stale counts and timings — test counts,
+guard counts, a suite duration — in documents whose prose was still accurate.
+
+Nothing checks them, and they are the most quotable part of a document, so they
+are what a future session repeats with confidence.
+
+Two habits help:
+
+- For anything that changes as work continues, name the command that prints the
+  current value: *"7 content and 11 headless tests — run `cargo test` for the
+  live count"*. The number is then a snapshot with an expiry date attached.
+- For a number that *is* the finding — a build time, a measured regression —
+  stamp it with the date and the conditions, and let it stand as history.
+
+The distinction is whether the number is evidence for a claim or a description
+of the current state. Evidence keeps; state rots.
 
 ### Write documentation after the work lands, not during
 `[ai-workflow]` — **confirmed**

@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 
 use crate::map::HoveredHotspot;
 use crate::place::*;
+use crate::save::{SaveSlots, Toast};
 use crate::story::*;
 
 /// Design-space size. The camera shows exactly this, letterboxed.
@@ -59,6 +60,8 @@ pub struct MusicPlayer;
 #[derive(Component, Clone, Copy, PartialEq, Eq)]
 pub enum UiButton {
     StartStory,
+    /// Resume from slot 1. Only offered when that file exists.
+    Continue,
     ReturnToMenu,
     Quit,
 }
@@ -88,31 +91,82 @@ fn menu_button(action: UiButton, label: &str) -> impl Bundle + use<> {
     )
 }
 
-pub fn spawn_menu(mut commands: Commands, locale: Res<Locale>) {
-    commands.spawn((
-        DespawnOnExit(AppState::MainMenu),
-        Node {
-            width: percent(100),
-            height: percent(100),
-            flex_direction: FlexDirection::Column,
-            align_items: AlignItems::Center,
-            justify_content: JustifyContent::Center,
-            row_gap: Val::Px(28.0),
-            ..default()
-        },
-        children![
-            (
+pub fn spawn_menu(mut commands: Commands, locale: Res<Locale>, slots: Res<SaveSlots>) {
+    // Asked of the filesystem each time the menu opens rather than remembered:
+    // the player may have saved since it was last built.
+    let has_save = slots.exists(1);
+
+    commands
+        .spawn((
+            DespawnOnExit(AppState::MainMenu),
+            Node {
+                width: percent(100),
+                height: percent(100),
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                row_gap: Val::Px(28.0),
+                ..default()
+            },
+        ))
+        .with_children(|parent| {
+            parent.spawn((
                 Text::new((locale.resolve)(TextKey("menu.title")).to_string()),
                 TextFont {
                     font_size: FontSize::Px(64.0),
                     ..default()
                 },
                 TextColor(Color::srgb(0.98, 0.82, 0.36)),
-            ),
-            menu_button(UiButton::StartStory, (locale.resolve)(TextKey("menu.begin"))),
-            menu_button(UiButton::Quit, (locale.resolve)(TextKey("menu.quit"))),
-        ],
+            ));
+            parent.spawn(menu_button(
+                UiButton::StartStory,
+                (locale.resolve)(TextKey("menu.begin")),
+            ));
+            if has_save {
+                parent.spawn(menu_button(
+                    UiButton::Continue,
+                    (locale.resolve)(TextKey("menu.continue")),
+                ));
+            }
+            parent.spawn(menu_button(
+                UiButton::Quit,
+                (locale.resolve)(TextKey("menu.quit")),
+            ));
+        });
+}
+
+/// Transient feedback: "saved", "loaded", or why not.
+#[derive(Component)]
+pub struct ToastText;
+
+/// Spawned once and never torn down — it has to be able to speak in every state,
+/// including the menu, and it says nothing when there is nothing to say.
+pub fn spawn_toast(mut commands: Commands) {
+    commands.spawn((
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(20.0),
+            right: Val::Px(28.0),
+            padding: UiRect::axes(Val::Px(16.0), Val::Px(8.0)),
+            ..default()
+        },
+        Text::new(""),
+        TextFont {
+            font_size: FontSize::Px(22.0),
+            ..default()
+        },
+        TextColor(Color::srgb(0.98, 0.82, 0.36)),
+        ToastText,
     ));
+}
+
+pub fn draw_toast(toast: Res<Toast>, mut text: Query<&mut Text, With<ToastText>>) {
+    let Ok(mut text) = text.single_mut() else {
+        return;
+    };
+    if text.0 != toast.text {
+        text.0 = toast.text.clone();
+    }
 }
 
 /// Shown when the story reaches `Step::End`.

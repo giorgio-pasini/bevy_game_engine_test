@@ -5,10 +5,19 @@ AI-assisted Bevy workflow, so the conventions below matter more than the game.
 
 ## Running
 
+Run from `games\`, **not** from this directory:
+
 ```powershell
-cargo run --features dev     # fast iteration — Bevy linked as a shared library
-cargo run --release          # static, optimized
+cargo snake                  # alias for: run -p snake --features dev
+cargo wb                     # build the whole workspace, same feature set
 ```
+
+Running `cargo run --features dev` here instead would work, and that is the
+problem: cargo resolves features over the set of packages it is building, so
+building this package alone enables a *different* feature set on shared crates
+than building the workspace does. Alternating between the two silently rebuilds
+the engine each way — measured, and fallen into three times. The aliases in
+`..\.cargo\config.toml` exist so there is one invocation to use.
 
 Always pass `--features dev` while iterating. Without it, every edit to
 `main.rs` relinks the entire engine.

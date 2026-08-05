@@ -11,6 +11,7 @@ and get rewritten freely; this file is what preserves the history behind them.
 
 | Date | Decision | Entry |
 | --- | --- | --- |
+| 2026-08-05 | Saves store what cannot be derived — including the playing track, excluding cached fields | [2026-08-05](#2026-08-05) |
 | 2026-08-05 | Hotspots are options with a colour, audited against the actual pixels at build time | [2026-08-05](#2026-08-05) |
 | 2026-08-05 | The cast is re-established per scene, like the background — **not** persistent like music | [2026-08-05](#2026-08-05) |
 | 2026-08-04 | **Scope change**: pure VN → VN + point-and-click; control stack; every scene must set its own background | [2026-08-04](#2026-08-04) |
@@ -130,7 +131,7 @@ arrives, that guarantee moves to the build-time audit.
 | | |
 | --- | --- |
 | Scenes / places / endings | 22 / 4 / 4 |
-| Build-time guards | ~22 distinct checks (6 new, each verified by breaking it) |
+| Build-time guards | the hotspot audit alone adds **11** distinct failure conditions, plus the speaker-staging guard; **6** of them verified by deliberate breakage |
 | Tests | 16 — 7 content, 7 headless app, 2 documentation alignment |
 | Incremental rebuild | ~38s |
 | Placeholder art | 44 KB picture + 12 KB lookup, generated |
@@ -164,6 +165,58 @@ the map regions click where they look like they should, the hover label reads,
 and the characters are present again. Worth stating separately, because every
 engine bug in this project so far passed the automated layers and was found at
 this one.
+
+### Later the same day: stage 5, save/load
+
+The last stage of the exploration roadmap. F5 saves, F9 loads, and the menu
+offers **Continue** when a slot exists.
+
+**The file holds what cannot be derived, and nothing else.** The control stack,
+flags, inventory — plus one field of apparent presentation state, the playing
+track, because music is *ambient*: the scene that started it may be several
+jumps in the past, so no replay of the current stack can reach it. Scenes are
+stored by **name**, not as the generated enum, so a save survives scenes being
+added or reordered and reads plainly in a text editor.
+
+`StoryState::current` is deliberately absent: it is a cached scene, recomputed
+from the topmost story frame on load. A save that stores a cache can contradict
+itself.
+
+**The cursor needed a correction nobody predicted.** `advance` steps *past* a
+line before handing control back, so a save points at the line *after* the one
+being read. Restoring verbatim silently skips a line. `rewind_to_current_line`
+steps back onto it — and the reason this was found at all is the round-trip
+test the design specified two years of sessions ago: save → load → save must be
+byte-identical, and without the rewind the cursor drifted one step forward every
+cycle.
+
+**A test that could not fail.** The soundtrack test passed with the restoring
+line deleted, because the track it saved was the one a fresh run starts anyway.
+Fixed by choosing a value only the save file can produce. Written up in the
+antipatterns — the break-it-and-confirm habit caught a bug in the *test*, which
+is the clearest argument for the habit yet.
+
+**One ordering hazard, expressed as a run condition.** Leaving the menu runs
+`restart`, which resets the story; "Continue" leaves the menu too. Rather than
+rely on schedule position, the installer runs everywhere *except* the menu, and
+`restart` stands aside when a load is pending. Two independent guards, neither
+depending on the other's position in the chain.
+
+### Numbers, end of day
+
+| | |
+| --- | --- |
+| Tests | 20 — 7 content, 11 headless app, 2 documentation alignment |
+| New guarantees | 4, each verified by deletion: 2 tests died for the cursor rewind, 1 each for the ambient field and the restored flags |
+| Save file | ~20 lines of RON, readable and diffable |
+
+### What is left
+
+The exploration roadmap is **complete** — stages 1 to 5 are all in. Remaining in
+`DESIGN.md` Part 8b: greying out already-taken options, which belongs in the
+profile rather than the save. Beyond that the milestone table's outstanding
+entries are backlog, auto-advance and skip (9), settings (10), transitions (11),
+and gallery/achievements/voice (12).
 
 ---
 

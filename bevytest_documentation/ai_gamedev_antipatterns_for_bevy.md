@@ -253,6 +253,39 @@ already knows, delete it and ask the world.**
 
 ---
 
+## Writing a test that passes for the wrong reason
+
+**What it looks like:** a test asserting the right thing about the right code
+path, green on the first run. Nothing about it looks wrong, because nothing
+about it *is* wrong — it simply cannot fail.
+
+**Why it bites:** a green test is treated as evidence. This one is evidence of
+nothing, and it is worse than no test, because it stops anyone writing the real
+one.
+
+**Evidence.** Save files carry the playing track, because music is ambient state
+that no replay can reconstruct. The test: start the game, save, load in a fresh
+app, assert the track came back.
+
+It passed with the restoring line **deleted**. The saved track was the one the
+opening scene starts, and loading runs a fresh start first — so the correct
+answer arrived by coincidence down a completely different path.
+
+The fix was to choose a discriminating value: a track that **no frame on the
+restored stack sets** and that differs from what a fresh run starts. Then the
+save file is the only thing that can produce it.
+
+**Cost:** none, because the break-it-and-confirm habit caught it within a minute
+of writing it. That is the entire argument for the habit — the bug it found was
+in the test, not in the code, and no amount of reading would have shown it.
+
+**Instead:** after a test goes green, break the thing it watches and confirm it
+goes red. When it stays green, ask *what else could produce this value* — a
+default, a fresh start, a coincidence of content — and pick an expected value
+that only the code under test can produce.
+
+---
+
 ## Fixing the instance and declaring the class fixed
 
 **What it looks like:** a bug is diagnosed properly, the underlying rule is

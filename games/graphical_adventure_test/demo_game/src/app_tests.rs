@@ -14,6 +14,7 @@
 //! which is exactly what they should do.
 
 use bevy::asset::RenderAssetUsages;
+use bevy::ecs::system::RunSystemOnce;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::state::app::StatesPlugin;
@@ -48,8 +49,70 @@ fn harness() -> App {
             tuning: scenes::presentation(),
             places: scenes::places(),
             scene_of_name: scenes::scene_of_name,
+            scene_name_of: scenes::scene_name_of,
         });
+    // Saves must never land in the player's game folder from a test run, and two
+    // tests must never share a slot file.
+    let root = std::env::temp_dir().join(format!(
+        "vn_core_test_saves_{}_{:?}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    app.insert_resource(SaveSlots { root });
     app
+}
+
+fn slots(app: &App) -> SaveSlots {
+    app.world().resource::<SaveSlots>().clone()
+}
+
+/// Saves slot 1 straight from the live app, exactly as F5 does.
+fn save_now(app: &mut App) {
+    let world = app.world();
+    let state = world.resource::<StoryState<scenes::SceneId>>();
+    let stage = world.resource::<Stage>();
+    let lookup = world.resource::<SceneLookup<scenes::SceneId>>();
+    let snapshot = capture(state, stage.music.clone(), lookup.name_of);
+    write_slot(&slots(app), 1, snapshot, "test".to_string()).expect("save should succeed");
+}
+
+fn load_now(app: &mut App) {
+    app.world_mut().resource_mut::<LoadRequest>().0 = Some(1);
+    settle(app);
+}
+
+fn capture_now(app: &App) -> SaveState {
+    let world = app.world();
+    capture(
+        world.resource::<StoryState<scenes::SceneId>>(),
+        world.resource::<Stage>().music.clone(),
+        world.resource::<SceneLookup<scenes::SceneId>>().name_of,
+    )
+}
+
+/// Runs the story engine one step, the way a click would.
+///
+/// Deliberately not simulated keyboard input: `ButtonInput` is cleared in
+/// `PreUpdate`, so a press written from outside the schedule is wiped before any
+/// system sees it. Running the engine directly tests the same function the input
+/// system calls, without pretending to test input handling as well.
+fn advance_once(app: &mut App) {
+    app.world_mut()
+        .run_system_once(step_story)
+        .expect("the story should advance");
+}
+
+fn step_story(
+    mut state: ResMut<StoryState<scenes::SceneId>>,
+    script: Res<Script<scenes::SceneId>>,
+    mut stage: ResMut<Stage>,
+    mut line: ResMut<CurrentLine>,
+    mut choices: ResMut<PendingChoices>,
+) {
+    advance(&mut state, &script, &mut stage, &mut line, &mut choices);
 }
 
 /// Runs enough updates for a state transition to apply and its systems to run.
@@ -261,6 +324,206 @@ fn a_sampled_region_selects_the_option_that_declared_it() {
     assert_eq!(
         places.option_for_region("valley", Rgb::EMPTY, &flags, &items),
         None
+    );
+}
+
+/// The design's own test of the architecture: save, load, save again, and the
+/// state must come back **exactly**.
+///
+/// It catches the whole class of restore bugs in one assertion. A replay that
+/// re-ran `Set` or `Add` would show up as a drifted counter; a cursor restored
+/// without the rewind would show up as a step index one further along every
+/// round trip.
+///
+/// Metadata is excluded on purpose — a timestamp legitimately differs between
+/// two saves. The game state must not.
+#[test]
+fn save_load_save_round_trips_the_state_exactly() {
+    let mut app = harness();
+    settle(&mut app);
+    go(&mut app, AppState::Playing);
+    // A few lines in, so the cursor is somewhere non-trivial.
+    for _ in 0..3 {
+        advance_once(&mut app);
+    }
+
+    save_now(&mut app);
+    let first = read_slot(&slots(&app), 1).expect("save should read back");
+
+    load_now(&mut app);
+    save_now(&mut app);
+    let second = read_slot(&slots(&app), 1).expect("save should read back");
+
+    assert_eq!(
+        ron::ser::to_string_pretty(&first.state, default()).unwrap(),
+        ron::ser::to_string_pretty(&second.state, default()).unwrap(),
+        "loading and re-saving changed the state"
+    );
+}
+
+/// Saving inside a scene *called from a place* is the case the control stack
+/// exists for: two frames deep, with the room waiting underneath.
+#[test]
+fn a_save_two_frames_deep_restores_the_whole_stack() {
+    let mut app = harness();
+    settle(&mut app);
+    go(&mut app, AppState::Playing);
+
+    app.world_mut()
+        .resource_mut::<StoryState<scenes::SceneId>>()
+        .push_place("ridge".to_string());
+    go(&mut app, AppState::Exploring);
+    {
+        let world = app.world_mut();
+        let scene_of = world.resource::<Script<scenes::SceneId>>().scene_of;
+        let mut state = world.resource_mut::<StoryState<scenes::SceneId>>();
+        state.call_scene(
+            scenes::SceneId::PassTalk,
+            &Script {
+                scene_of,
+                start: scenes::START,
+            },
+        );
+    }
+    go(&mut app, AppState::Playing);
+    advance_once(&mut app);
+
+    let before = capture_now(&app);
+    assert_eq!(before.stack.len(), 3, "story -> place -> called scene");
+    save_now(&mut app);
+
+    // Wander off somewhere else entirely, then load.
+    app.world_mut()
+        .resource_mut::<StoryState<scenes::SceneId>>()
+        .stack
+        .truncate(1);
+    load_now(&mut app);
+
+    let after = capture_now(&app);
+    assert_eq!(after.stack, before.stack, "the stack did not come back");
+    assert_eq!(after.flags, before.flags);
+    assert_eq!(after.items, before.items);
+
+    // And the screen was rebuilt, not left blank — the reason replay walks every
+    // frame from the bottom rather than just the top one.
+    let stage = app.world().resource::<Stage>();
+    assert!(
+        stage.background.is_some(),
+        "loading left the stage with no background"
+    );
+    assert!(
+        !app.world().resource::<CurrentLine>().full.is_empty(),
+        "loading left no line on screen"
+    );
+}
+
+/// Loading must not re-run the steps that *changed* state — only the ones that
+/// dress the stage. A counter that advanced again on every load would corrupt a
+/// save a little more each time it was reloaded.
+#[test]
+fn loading_does_not_replay_state_changing_steps() {
+    let mut app = harness();
+    settle(&mut app);
+    go(&mut app, AppState::Playing);
+
+    // `ledge_find` grants an item and adds to a counter, then we save past it.
+    {
+        let world = app.world_mut();
+        let scene_of = world.resource::<Script<scenes::SceneId>>().scene_of;
+        let mut state = world.resource_mut::<StoryState<scenes::SceneId>>();
+        state.call_scene(
+            scenes::SceneId::LedgeFind,
+            &Script {
+                scene_of,
+                start: scenes::START,
+            },
+        );
+    }
+    for _ in 0..3 {
+        advance_once(&mut app);
+    }
+    let before = capture_now(&app);
+    assert_eq!(
+        before.flags.get("trust"),
+        Some(&1),
+        "precondition: the scene should have added to `trust` exactly once"
+    );
+    assert!(before.items.contains("brass_gear"));
+
+    save_now(&mut app);
+    load_now(&mut app);
+    load_now(&mut app);
+
+    let after = capture_now(&app);
+    assert_eq!(
+        after.flags, before.flags,
+        "two loads changed the flags — the replay is re-running Set/Add steps"
+    );
+    assert_eq!(after.items, before.items);
+}
+
+/// Music cannot be derived from the stack, so it is the one piece of stage state
+/// the file carries.
+///
+/// The discriminator matters: the track has to be one that **no frame on the
+/// restored stack sets**, and different from what a fresh run would start. Any
+/// other choice passes whether or not the save carries music at all — replay
+/// would reproduce it, or a fresh start would coincidentally match. This is the
+/// scenario the save field exists for: a track started by a scene the story has
+/// since jumped away from.
+#[test]
+fn a_load_restores_the_soundtrack() {
+    let mut app = harness();
+    settle(&mut app);
+    go(&mut app, AppState::Playing);
+
+    // Leave the opening scene, so the frame carrying `Music(...)` is gone.
+    for _ in 0..30 {
+        if !matches!(
+            capture_now(&app).stack.first(),
+            Some(SavedFrame::Story { scene, .. }) if scene == "awakening"
+        ) {
+            break;
+        }
+        advance_once(&mut app);
+    }
+    assert!(
+        !matches!(
+            capture_now(&app).stack.first(),
+            Some(SavedFrame::Story { scene, .. }) if scene == "awakening"
+        ),
+        "precondition: the story should have moved off the opening scene"
+    );
+
+    // A track an earlier scene started and nothing on the stack can reproduce.
+    let track = Some("music/calm.ogg".to_string());
+    app.world_mut().resource_mut::<Stage>().music = track.clone();
+    save_now(&mut app);
+
+    let expected = capture_now(&app);
+
+    // A second app, as if the process had been restarted, taking the "Continue"
+    // path out of the menu: leaving it runs `restart`, which must not reset the
+    // run out from under the load.
+    let mut fresh = harness();
+    fresh.insert_resource(slots(&app));
+    settle(&mut fresh);
+    fresh.world_mut().resource_mut::<LoadRequest>().0 = Some(1);
+    fresh
+        .world_mut()
+        .resource_mut::<NextState<AppState>>()
+        .set(AppState::Playing);
+    settle(&mut fresh);
+
+    assert_eq!(
+        fresh.world().resource::<Stage>().music,
+        track,
+        "the loaded game is playing what a fresh run starts, not what was saved"
+    );
+    assert_eq!(
+        capture_now(&fresh).stack,
+        expected.stack,
+        "starting a run over the top of a pending load threw the save away"
     );
 }
 

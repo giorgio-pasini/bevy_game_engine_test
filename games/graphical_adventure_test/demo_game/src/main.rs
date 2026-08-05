@@ -37,6 +37,7 @@ fn main() {
             tuning: scenes::presentation(),
             places: scenes::places(),
             scene_of_name: scenes::scene_of_name,
+            scene_name_of: scenes::scene_name_of,
         })
         .run();
 }
