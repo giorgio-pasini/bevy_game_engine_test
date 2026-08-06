@@ -28,6 +28,10 @@ fn documents() -> Vec<PathBuf> {
         root.join("CLAUDE.md"),
         root.join("games/snake/CLAUDE.md"),
         root.join("games/graphical_adventure_test/DESIGN.md"),
+        // A review is worth checking like any other document: it cites more
+        // paths than most, and a finding that names a file which has since moved
+        // is a finding nobody can act on.
+        root.join("games/graphical_adventure_test/ENGINEERING_REVIEW.md"),
     ];
     if let Ok(entries) = std::fs::read_dir(root.join("bevytest_documentation")) {
         for e in entries.flatten() {

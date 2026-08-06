@@ -56,18 +56,13 @@ fn main() {
     // path that does not move when the player launches the game differently.
     .insert_resource(SaveSlots::for_game("GoldenGolem"))
     .add_plugins(VnPlugin {
-        script: Script {
-            scene_of: scenes::scene,
-            start: scenes::START,
-        },
+        start: scenes::START,
         locale: Locale {
             resolve: scenes::text_en,
         },
         cast: scenes::cast(),
         tuning: scenes::presentation(),
         places: scenes::places(),
-        scene_of_name: scenes::scene_of_name,
-        scene_name_of: scenes::scene_name_of,
     })
     .run();
 }

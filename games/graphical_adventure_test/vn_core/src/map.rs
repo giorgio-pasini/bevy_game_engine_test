@@ -24,7 +24,7 @@ use bevy::prelude::*;
 
 use crate::place::*;
 use crate::present::{DESIGN_H, DESIGN_W};
-use crate::story::{SceneKey, StoryState};
+use crate::story::{GameScript, StoryState};
 
 /// The lookup image for the place currently being explored.
 ///
@@ -76,7 +76,7 @@ pub fn sample_design_point(image: &Image, x: f32, y: f32) -> Option<Rgb> {
 }
 
 /// Loads (or drops) the lookup image when the place changes.
-pub fn sync_lookup<S: SceneKey>(
+pub fn sync_lookup<S: GameScript>(
     state: Res<StoryState<S>>,
     places: Res<Places>,
     assets: Res<AssetServer>,
@@ -98,7 +98,7 @@ pub fn sync_lookup<S: SceneKey>(
 
 /// Resolves what the cursor is pointing at. The only writer of
 /// [`HoveredHotspot`].
-pub fn hover_hotspot<S: SceneKey>(
+pub fn hover_hotspot<S: GameScript>(
     state: Res<StoryState<S>>,
     places: Res<Places>,
     lookup: Res<MapLookup>,

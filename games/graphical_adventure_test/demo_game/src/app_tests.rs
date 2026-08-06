@@ -43,18 +43,13 @@ fn harness() -> App {
         .init_asset::<Image>()
         .init_asset::<bevy::audio::AudioSource>()
         .add_plugins(VnPlugin {
-            script: Script {
-                scene_of: scenes::scene,
-                start: scenes::START,
-            },
+            start: scenes::START,
             locale: Locale {
                 resolve: scenes::text_en,
             },
             cast: scenes::cast(),
             tuning: scenes::presentation(),
             places: scenes::places(),
-            scene_of_name: scenes::scene_of_name,
-            scene_name_of: scenes::scene_name_of,
         });
     // Saves must never land in the player's game folder from a test run, and two
     // tests must never share a slot file.
@@ -79,8 +74,7 @@ fn save_now(app: &mut App) {
     let world = app.world();
     let state = world.resource::<StoryState<scenes::SceneId>>();
     let stage = world.resource::<Stage>();
-    let lookup = world.resource::<SceneLookup<scenes::SceneId>>();
-    let snapshot = capture(state, stage.music.clone(), lookup.name_of);
+    let snapshot = capture(state, stage.music.clone());
     write_slot(&slots(app), 1, snapshot, "test".to_string()).expect("save should succeed");
 }
 
@@ -94,7 +88,6 @@ fn capture_now(app: &App) -> SaveState {
     capture(
         world.resource::<StoryState<scenes::SceneId>>(),
         world.resource::<Stage>().music.clone(),
-        world.resource::<SceneLookup<scenes::SceneId>>().name_of,
     )
 }
 
@@ -143,12 +136,11 @@ fn click_mouse(app: &mut App) {
 
 fn step_story(
     mut state: ResMut<StoryState<scenes::SceneId>>,
-    script: Res<Script<scenes::SceneId>>,
     mut stage: ResMut<Stage>,
     mut line: ResMut<CurrentLine>,
     mut choices: ResMut<PendingChoices>,
 ) {
-    advance(&mut state, &script, &mut stage, &mut line, &mut choices);
+    advance(&mut state, &mut stage, &mut line, &mut choices);
 }
 
 /// Runs enough updates for a state transition to apply and its systems to run.
@@ -243,9 +235,8 @@ fn returning_from_a_called_scene_redraws_the_place() {
     // would, then come back.
     {
         let world = app.world_mut();
-        let script = world.resource::<Script<scenes::SceneId>>().scene_of;
         let mut state = world.resource_mut::<StoryState<scenes::SceneId>>();
-        state.call_scene(scenes::SceneId::PassTalk, &Script { scene_of: script, start: scenes::START });
+        state.call_scene(scenes::SceneId::PassTalk);
     }
     go(&mut app, AppState::Playing);
     assert_eq!(
@@ -257,9 +248,8 @@ fn returning_from_a_called_scene_redraws_the_place() {
     // Return: pop the scene frame, back to the place.
     {
         let world = app.world_mut();
-        let script = world.resource::<Script<scenes::SceneId>>().scene_of;
         let mut state = world.resource_mut::<StoryState<scenes::SceneId>>();
-        state.pop(&Script { scene_of: script, start: scenes::START });
+        state.pop();
     }
     go(&mut app, AppState::Exploring);
 
@@ -411,15 +401,8 @@ fn a_save_two_frames_deep_restores_the_whole_stack() {
     go(&mut app, AppState::Exploring);
     {
         let world = app.world_mut();
-        let scene_of = world.resource::<Script<scenes::SceneId>>().scene_of;
         let mut state = world.resource_mut::<StoryState<scenes::SceneId>>();
-        state.call_scene(
-            scenes::SceneId::PassTalk,
-            &Script {
-                scene_of,
-                start: scenes::START,
-            },
-        );
+        state.call_scene(scenes::SceneId::PassTalk);
     }
     go(&mut app, AppState::Playing);
     advance_once(&mut app);
@@ -465,15 +448,8 @@ fn loading_does_not_replay_state_changing_steps() {
     // `ledge_find` grants an item and adds to a counter, then we save past it.
     {
         let world = app.world_mut();
-        let scene_of = world.resource::<Script<scenes::SceneId>>().scene_of;
         let mut state = world.resource_mut::<StoryState<scenes::SceneId>>();
-        state.call_scene(
-            scenes::SceneId::LedgeFind,
-            &Script {
-                scene_of,
-                start: scenes::START,
-            },
-        );
+        state.call_scene(scenes::SceneId::LedgeFind);
     }
     for _ in 0..3 {
         advance_once(&mut app);

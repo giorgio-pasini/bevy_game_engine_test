@@ -46,16 +46,25 @@ pub fn places() -> Places {
     Places(map)
 }
 
-/// Resolves a scene name written in a place file to its generated id.
-/// `build.rs` has already proven every such name exists.
-pub fn scene_of_name(name: &str) -> Option<SceneId> {
-    SceneId::from_stem(name)
-}
+/// Everything `vn_core` needs to ask about this game's scenes.
+///
+/// One `impl` in place of three function pointers threaded through two
+/// resources: the engine now writes `id.scene()` where it used to write
+/// `(script.scene_of)(id)`, and "go to definition" lands here.
+impl GameScript for SceneId {
+    fn scene(self) -> Scene<SceneId> {
+        content(self)
+    }
 
-/// The reverse, used to write save files in terms of scene *names* rather than
-/// enum ordinals — so a save survives scenes being added or reordered.
-pub fn scene_name_of(id: SceneId) -> &'static str {
-    id.stem()
+    /// Names come from the filenames `build.rs` generated the enum from, so a
+    /// save file reads plainly and survives scenes being added or reordered.
+    fn name(self) -> &'static str {
+        self.stem()
+    }
+
+    fn from_name(name: &str) -> Option<SceneId> {
+        SceneId::from_stem(name)
+    }
 }
 
 /// Menu chrome. Not story content, so it stays in Rust rather than becoming a
@@ -94,7 +103,7 @@ fn cache() -> &'static BTreeMap<SceneId, Scene<SceneId>> {
     })
 }
 
-pub fn scene(id: SceneId) -> Scene<SceneId> {
+pub fn content(id: SceneId) -> Scene<SceneId> {
     cache()
         .get(&id)
         .unwrap_or_else(|| panic!("scene `{}` missing from cache", id.stem()))
@@ -132,7 +141,7 @@ mod tests {
             assets.extend(place.lookup.clone());
         }
         for id in SceneId::ALL {
-            for step in scene(*id).steps {
+            for step in content(*id).steps {
                 match step {
                     Step::Background { image } => {
                         assets.insert(image);
@@ -154,7 +163,7 @@ mod tests {
         let cast = cast();
         let mut missing = BTreeSet::new();
         for id in SceneId::ALL {
-            for step in scene(*id).steps {
+            for step in content(*id).steps {
                 match step {
                     Step::Show { character, .. } => {
                         if cast.image_of(&character).is_none() {
@@ -177,7 +186,7 @@ mod tests {
     fn every_scene_parses_and_resolves() {
         // `scene()` panics on a bad file, so simply walking them all is the test.
         for id in SceneId::ALL {
-            assert!(!scene(*id).steps.is_empty(), "scene `{}` is empty", id.stem());
+            assert!(!content(*id).steps.is_empty(), "scene `{}` is empty", id.stem());
         }
     }
 
@@ -223,10 +232,6 @@ mod tests {
     /// app, which is a separate piece of work.
     #[test]
     fn no_reachable_path_dead_ends() {
-        let script = Script {
-            scene_of: scene,
-            start: START,
-        };
         let places = places();
 
         // Identity of a situation: where we are, plus what we know and carry.
@@ -245,7 +250,7 @@ mod tests {
                 scene: START,
                 step: 0,
             }],
-            current: scene(START),
+            current: content(START),
             flags: Default::default(),
             items: Default::default(),
         };
@@ -275,7 +280,7 @@ mod tests {
             let mut line = CurrentLine::default();
             let mut choices = PendingChoices::default();
 
-            let flow = advance(&mut state, &script, &mut stage, &mut line, &mut choices);
+            let flow = advance(&mut state, &mut stage, &mut line, &mut choices);
 
             match flow {
                 Flow::Ended => endings += 1,
@@ -287,7 +292,7 @@ mod tests {
                     );
                     for (_, index) in &choices.items {
                         let mut branch = state.clone();
-                        if take_choice(*index, &mut branch, &script) {
+                        if take_choice(*index, &mut branch) {
                             push!(visited, queue, branch);
                         }
                     }
@@ -306,7 +311,7 @@ mod tests {
                     );
                     for (index, _) in options {
                         let mut branch = state.clone();
-                        take_option(index, &mut branch, &script, &places, SceneId::from_stem);
+                        take_option(index, &mut branch, &places);
                         push!(visited, queue, branch);
                     }
                 }
@@ -350,7 +355,7 @@ mod tests {
         // Seed with every place any scene explores, then follow places into the
         // scenes they call.
         for id in SceneId::ALL {
-            for step in scene(*id).steps {
+            for step in content(*id).steps {
                 if let Step::Explore { place } = step {
                     place_queue.push(place);
                 }
@@ -379,7 +384,7 @@ mod tests {
             if !seen.insert(id) {
                 continue;
             }
-            for step in scene(id).steps {
+            for step in content(id).steps {
                 // Variants listed explicitly rather than `_ => {}`. The exact
                 // same wildcard in build.rs silently skipped `JumpIf` when it
                 // was added, so scenes reachable only through it were reported

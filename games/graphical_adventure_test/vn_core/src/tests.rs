@@ -29,20 +29,26 @@ enum Test {
     Ending,
 }
 
-fn name_of(id: Test) -> &'static str {
-    match id {
-        Test::Opening => "opening",
-        Test::Branch => "branch",
-        Test::Ending => "ending",
+impl GameScript for Test {
+    fn scene(self) -> Scene<Test> {
+        content(self)
     }
-}
 
-fn of_name(name: &str) -> Option<Test> {
-    match name {
-        "opening" => Some(Test::Opening),
-        "branch" => Some(Test::Branch),
-        "ending" => Some(Test::Ending),
-        _ => None,
+    fn name(self) -> &'static str {
+        match self {
+            Test::Opening => "opening",
+            Test::Branch => "branch",
+            Test::Ending => "ending",
+        }
+    }
+
+    fn from_name(name: &str) -> Option<Test> {
+        match name {
+            "opening" => Some(Test::Opening),
+            "branch" => Some(Test::Branch),
+            "ending" => Some(Test::Ending),
+            _ => None,
+        }
     }
 }
 
@@ -52,7 +58,7 @@ fn bg() -> Step<Test> {
     }
 }
 
-fn scene_of(id: Test) -> Scene<Test> {
+fn content(id: Test) -> Scene<Test> {
     let steps = match id {
         // Establishes a whole stage before it blocks, which is what `advance`
         // batching is for.
@@ -107,17 +113,10 @@ fn scene_of(id: Test) -> Scene<Test> {
     Scene { id, steps }
 }
 
-fn script() -> Script<Test> {
-    Script {
-        scene_of,
-        start: Test::Opening,
-    }
-}
-
 fn state_at(id: Test, step: usize) -> StoryState<Test> {
     StoryState {
         stack: vec![Frame::Story { scene: id, step }],
-        current: scene_of(id),
+        current: content(id),
         flags: BTreeMap::new(),
         items: Default::default(),
     }
@@ -190,7 +189,7 @@ fn advance_once(state: &mut StoryState<Test>) -> (Flow, Stage, CurrentLine, Pend
         CurrentLine::default(),
         PendingChoices::default(),
     );
-    let flow = advance(state, &script(), &mut stage, &mut line, &mut choices);
+    let flow = advance(state, &mut stage, &mut line, &mut choices);
     (flow, stage, line, choices)
 }
 
@@ -256,7 +255,7 @@ fn a_branch_offers_only_options_whose_condition_holds() {
 fn taking_a_choice_replaces_the_frame_rather_than_pushing() {
     let mut state = state_at(Test::Branch, 1);
     let (_, _, _, _) = advance_once(&mut state);
-    assert!(take_choice(1, &mut state, &script()));
+    assert!(take_choice(1, &mut state));
 
     assert_eq!(state.stack.len(), 1, "choosing is not calling");
     assert!(matches!(
@@ -273,7 +272,7 @@ fn a_refused_choice_leaves_the_state_alone() {
     let mut state = state_at(Test::Branch, 1);
     advance_once(&mut state);
     assert!(
-        !take_choice(0, &mut state, &script()),
+        !take_choice(0, &mut state),
         "the guarded option must be refused even if something clicks it"
     );
     assert!(matches!(
@@ -319,7 +318,7 @@ fn moving_between_rooms_replaces_the_frame_and_calling_pushes_one() {
 
     // GoTo: same depth, different room. Pushing here would make one `Leave`
     // unwind a single room instead of leaving exploration.
-    let flow = take_option(0, &mut state, &script(), &places(), of_name);
+    let flow = take_option(0, &mut state, &places());
     assert_eq!(flow, Flow::Exploring);
     assert_eq!(state.stack.len(), depth);
     assert_eq!(state.current_place(), Some("cellar"));
@@ -327,7 +326,7 @@ fn moving_between_rooms_replaces_the_frame_and_calling_pushes_one() {
     // Call: one frame deeper, and the room is still underneath.
     let mut state = state_at(Test::Opening, 4);
     state.push_place("hall".into());
-    let flow = take_option(1, &mut state, &script(), &places(), of_name);
+    let flow = take_option(1, &mut state, &places());
     assert_eq!(flow, Flow::Playing(PlayMode::Revealing));
     assert_eq!(state.stack.len(), depth + 1);
     assert_eq!(state.current.id, Test::Ending);
@@ -335,7 +334,7 @@ fn moving_between_rooms_replaces_the_frame_and_calling_pushes_one() {
     // Leave: back to the story frame beneath.
     let mut state = state_at(Test::Opening, 4);
     state.push_place("cellar".into());
-    let flow = take_option(0, &mut state, &script(), &places(), of_name);
+    let flow = take_option(0, &mut state, &places());
     assert_eq!(flow, Flow::Playing(PlayMode::Revealing));
     assert_eq!(state.current_place(), None);
     assert_eq!(state.story_step(), Some(4), "the story resumes where it was");
@@ -348,7 +347,7 @@ fn an_option_whose_condition_fails_is_refused_even_when_clicked() {
 
     // Index 2 requires an item the player does not carry. A button can outlive
     // the state that offered it, so `take_option` re-checks rather than trusting.
-    let flow = take_option(2, &mut state, &script(), &places(), of_name);
+    let flow = take_option(2, &mut state, &places());
     assert_eq!(flow, Flow::Exploring);
     assert_eq!(state.current_place(), Some("hall"), "nothing should have happened");
 
@@ -461,10 +460,10 @@ fn a_snapshot_round_trips_through_capture_and_restore() {
     state.flags.insert("counter".into(), 3);
     state.items.insert("token".into());
 
-    let snapshot = capture(&state, Some("m.ogg".into()), name_of);
-    let restored = restore(&snapshot, &script(), of_name).expect("should restore");
+    let snapshot = capture(&state, Some("m.ogg".into()));
+    let restored = restore::<Test>(&snapshot).expect("should restore");
 
-    assert_eq!(capture(&restored, Some("m.ogg".into()), name_of), snapshot);
+    assert_eq!(capture(&restored, Some("m.ogg".into())), snapshot);
     assert_eq!(restored.current_place(), Some("hall"));
     assert_eq!(restored.flags.get("counter"), Some(&3));
     assert!(restored.items.contains("token"));
@@ -476,9 +475,9 @@ fn restoring_rebuilds_the_cached_scene_from_the_top_story_frame() {
     // disagree with its own stack.
     let mut state = state_at(Test::Branch, 1);
     state.push_place("hall".into());
-    let snapshot = capture(&state, None, name_of);
+    let snapshot = capture(&state, None);
 
-    let restored = restore(&snapshot, &script(), of_name).unwrap();
+    let restored = restore::<Test>(&snapshot).unwrap();
     assert_eq!(
         restored.current.id,
         Test::Branch,
@@ -555,7 +554,7 @@ fn restoring_refuses_a_save_naming_content_that_no_longer_exists() {
     // `.err()` rather than `expect_err`: the success type is `StoryState`, which
     // is deliberately not `Debug` — a scene's steps include whole strings of
     // prose, and printing them on a failure would bury the message.
-    let error = restore(&snapshot, &script(), of_name)
+    let error = restore::<Test>(&snapshot)
         .err()
         .expect("should refuse a scene name that no longer exists");
     assert!(
@@ -570,5 +569,5 @@ fn restoring_refuses_a_save_naming_content_that_no_longer_exists() {
         }],
         ..Default::default()
     };
-    assert!(restore(&snapshot, &script(), of_name).is_err());
+    assert!(restore::<Test>(&snapshot).is_err());
 }

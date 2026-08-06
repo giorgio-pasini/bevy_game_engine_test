@@ -25,7 +25,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
-use crate::place::SceneLookup;
 use crate::story::*;
 
 /// Bumped when the format changes incompatibly. There is deliberately **no
@@ -180,11 +179,7 @@ impl Toast {
 }
 
 /// Story state to snapshot.
-pub fn capture<S: SceneKey>(
-    state: &StoryState<S>,
-    music: Option<String>,
-    name_of: fn(S) -> &'static str,
-) -> SaveState {
+pub fn capture<S: GameScript>(state: &StoryState<S>, music: Option<String>) -> SaveState {
     SaveState {
         music,
         stack: state
@@ -192,7 +187,7 @@ pub fn capture<S: SceneKey>(
             .iter()
             .map(|frame| match frame {
                 Frame::Story { scene, step } => SavedFrame::Story {
-                    scene: name_of(*scene).to_string(),
+                    scene: scene.name().to_string(),
                     step: *step,
                 },
                 Frame::Explore { place } => SavedFrame::Explore {
@@ -210,16 +205,12 @@ pub fn capture<S: SceneKey>(
 /// Fails rather than guesses. A name that no longer exists means the content
 /// changed under the save, and quietly dropping the frame would resume the
 /// player somewhere they have never been.
-pub fn restore<S: SceneKey>(
-    saved: &SaveState,
-    script: &Script<S>,
-    of_name: fn(&str) -> Option<S>,
-) -> Result<StoryState<S>, String> {
+pub fn restore<S: GameScript>(saved: &SaveState) -> Result<StoryState<S>, String> {
     let mut stack = Vec::with_capacity(saved.stack.len());
     for frame in &saved.stack {
         stack.push(match frame {
             SavedFrame::Story { scene, step } => {
-                let id = of_name(scene)
+                let id = S::from_name(scene)
                     .ok_or_else(|| format!("this save names scene `{scene}`, which no longer exists"))?;
                 Frame::Story {
                     scene: id,
@@ -245,7 +236,7 @@ pub fn restore<S: SceneKey>(
 
     Ok(StoryState {
         stack,
-        current: (script.scene_of)(scene),
+        current: scene.scene(),
         flags: saved.flags.clone(),
         items: saved.items.clone(),
     })
@@ -302,13 +293,11 @@ pub fn read_slot(slots: &SaveSlots, slot: u8) -> Result<SaveFile, String> {
 }
 
 /// F5 saves to slot 1.
-#[allow(clippy::too_many_arguments)]
-pub fn save_on_key<S: SceneKey>(
+pub fn save_on_key<S: GameScript>(
     keys: Res<ButtonInput<KeyCode>>,
     app_state: Res<State<AppState>>,
     state: Res<StoryState<S>>,
     stage: Res<Stage>,
-    lookup: Res<SceneLookup<S>>,
     slots: Res<SaveSlots>,
     mut toast: ResMut<Toast>,
 ) {
@@ -321,10 +310,10 @@ pub fn save_on_key<S: SceneKey>(
     }
     let location = match state.stack.last() {
         Some(Frame::Explore { place }) => place.clone(),
-        Some(Frame::Story { scene, .. }) => (lookup.name_of)(*scene).to_string(),
+        Some(Frame::Story { scene, .. }) => scene.name().to_string(),
         None => "nowhere".to_string(),
     };
-    let snapshot = capture(&state, stage.music.clone(), lookup.name_of);
+    let snapshot = capture(&state, stage.music.clone());
     match write_slot(&slots, 1, snapshot, location) {
         Ok(()) => toast.show("saved"),
         Err(e) => {

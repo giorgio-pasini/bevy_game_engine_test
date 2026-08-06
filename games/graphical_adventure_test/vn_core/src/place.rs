@@ -86,18 +86,6 @@ pub struct Places(pub BTreeMap<String, Place>);
 #[derive(Resource, Default)]
 pub struct PickedOption(pub Option<usize>);
 
-/// Translates between a scene *name* — as written in a place file or a save —
-/// and the game's generated scene id, in both directions.
-///
-/// Supplied by the game, since only it knows the enum `build.rs` generated. The
-/// two directions live together because they must agree: `name_of` is what save
-/// files are written with, and `of_name` is what reads them back.
-#[derive(Resource)]
-pub struct SceneLookup<S> {
-    pub of_name: fn(&str) -> Option<S>,
-    pub name_of: fn(S) -> &'static str,
-}
-
 impl Places {
     pub fn get(&self, id: &str) -> Option<&Place> {
         self.0.get(id)

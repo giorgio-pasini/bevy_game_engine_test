@@ -566,7 +566,7 @@ pub struct HotspotLabel;
 /// Backgrounds and music are not touched here — the place's own values are
 /// pushed into `Stage`, and the same reconcilers that serve the narrative phase
 /// render them. Exploration is a different UI, not a different renderer.
-pub fn spawn_place_view<S: SceneKey>(
+pub fn spawn_place_view<S: GameScript>(
     mut commands: Commands,
     state: Res<StoryState<S>>,
     places: Res<Places>,
@@ -680,7 +680,7 @@ pub fn spawn_place_view<S: SceneKey>(
 /// Two situations need this, and `OnEnter(Exploring)` catches neither reliably:
 /// moving between rooms keeps the same `AppState`, and returning from a called
 /// scene destroys the UI without changing the place.
-pub fn refresh_place_view<S: SceneKey>(
+pub fn refresh_place_view<S: GameScript>(
     mut commands: Commands,
     state: Res<StoryState<S>>,
     places: Res<Places>,
@@ -702,7 +702,7 @@ pub fn refresh_place_view<S: SceneKey>(
 }
 
 /// Names the region under the cursor. The only writer of that text node.
-pub fn draw_hotspot_label<S: SceneKey>(
+pub fn draw_hotspot_label<S: GameScript>(
     state: Res<StoryState<S>>,
     places: Res<Places>,
     hovered: Res<HoveredHotspot>,

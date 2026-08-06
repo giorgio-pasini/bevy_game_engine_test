@@ -11,17 +11,35 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::place::{Effect, Places};
 
-/// Blanket trait for a game's scene enum. Being an enum is what makes jumps
-/// compile-checked: `Step::JumpTo(SceneId::Forest)` cannot name a scene that
-/// does not exist.
-pub trait SceneKey:
+/// A game's scene enum, and everything the engine needs to ask about it.
+///
+/// Being an enum is what makes jumps compile-checked: `Step::JumpTo(
+/// SceneId::Forest)` cannot name a scene that does not exist.
+///
+/// This began as three function pointers — `scene_of` on a `Script` resource,
+/// `of_name` and `name_of` on a `SceneLookup` resource — and became a trait
+/// because the pointers cost more to read than they saved. A function pointer
+/// is a *value*, so "go to definition" lands on the field rather than on the
+/// function that runs; and `Script` had to be threaded through seven systems
+/// and eight functions purely so that something could eventually call it. See
+/// `../../ENGINEERING_REVIEW.md`, finding C3.
+pub trait GameScript:
     Copy + Eq + std::hash::Hash + std::fmt::Debug + Send + Sync + 'static
 {
-}
+    /// The scene's content. Implemented in the game as an exhaustive `match`,
+    /// so adding a variant without writing its content fails to compile.
+    fn scene(self) -> Scene<Self>;
 
-impl<T> SceneKey for T where
-    T: Copy + Eq + std::hash::Hash + std::fmt::Debug + Send + Sync + 'static
-{
+    /// The name this scene is known by in data files and save files.
+    ///
+    /// Paired with [`GameScript::from_name`], and they must agree: saves are
+    /// written with one and read with the other.
+    fn name(self) -> &'static str;
+
+    /// Resolves a name written in a place file or a save. `None` for a name
+    /// that no longer exists, which callers must treat as an error rather than
+    /// silently skip.
+    fn from_name(name: &str) -> Option<Self>;
 }
 
 /// Indirection between a line and its localised prose.
@@ -271,7 +289,7 @@ impl RawScene {
     /// build that compiled, because `build.rs` validates every target — the
     /// error path exists only so a hand-edited file fails loudly instead of
     /// silently misbehaving.
-    pub fn resolve<S: SceneKey>(
+    pub fn resolve<S: GameScript>(
         self,
         id: S,
         lookup: impl Fn(&str) -> Option<S>,
@@ -330,14 +348,13 @@ pub struct Scene<S> {
     pub steps: Vec<Step<S>>,
 }
 
-/// The game supplies its scene lookup and starting point.
+/// Where a new run begins.
+///
+/// Deliberately data rather than an associated constant on [`GameScript`]: a
+/// game may want to choose it — chapter select, a debug entry point — and only
+/// `reset` reads it, so it costs one system a parameter rather than seven.
 #[derive(Resource)]
-pub struct Script<S: SceneKey> {
-    /// Implemented in the game as an exhaustive `match`, so adding a scene
-    /// variant without writing its content fails to compile.
-    pub scene_of: fn(S) -> Scene<S>,
-    pub start: S,
-}
+pub struct StartScene<S: GameScript>(pub S);
 
 /// Resolves a text key for the active language.
 #[derive(Resource)]
@@ -358,7 +375,7 @@ pub enum Frame<S> {
 /// Everything that would go into a save file. Presentation is absent on
 /// purpose — it is derived, never stored.
 #[derive(Resource, Clone)]
-pub struct StoryState<S: SceneKey> {
+pub struct StoryState<S: GameScript> {
     /// Top of the stack is the current context. Empty means the game is over.
     pub stack: Vec<Frame<S>>,
     /// Scene cached for the topmost `Story` frame, so steps are not re-resolved
@@ -370,7 +387,7 @@ pub struct StoryState<S: SceneKey> {
     pub items: BTreeSet<String>,
 }
 
-impl<S: SceneKey> StoryState<S> {
+impl<S: GameScript> StoryState<S> {
     /// The step index of the topmost `Story` frame, if that is what we are in.
     pub fn story_step(&self) -> Option<usize> {
         match self.stack.last() {
@@ -393,8 +410,8 @@ impl<S: SceneKey> StoryState<S> {
     }
 
     /// Replaces the top `Story` frame's scene and rewinds it.
-    fn enter_scene(&mut self, id: S, script: &Script<S>) {
-        self.current = (script.scene_of)(id);
+    fn enter_scene(&mut self, id: S) {
+        self.current = id.scene();
         match self.stack.last_mut() {
             Some(Frame::Story { scene, step }) => {
                 *scene = id;
@@ -408,12 +425,12 @@ impl<S: SceneKey> StoryState<S> {
     }
 
     /// Pushes a scene, to be returned from later.
-    pub fn call_scene(&mut self, id: S, script: &Script<S>) {
+    pub fn call_scene(&mut self, id: S) {
         self.stack.push(Frame::Story {
             scene: id,
             step: 0,
         });
-        self.current = (script.scene_of)(id);
+        self.current = id.scene();
     }
 
     pub fn push_place(&mut self, place: String) {
@@ -448,11 +465,11 @@ impl<S: SceneKey> StoryState<S> {
 
     /// Pops the current frame. Restores the cached scene if the frame beneath is
     /// a story frame. Returns false when the stack empties — the game is over.
-    pub fn pop(&mut self, script: &Script<S>) -> bool {
+    pub fn pop(&mut self) -> bool {
         self.stack.pop();
         match self.stack.last() {
             Some(Frame::Story { scene, .. }) => {
-                self.current = (script.scene_of)(*scene);
+                self.current = scene.scene();
                 true
             }
             Some(Frame::Explore { .. }) => true,
@@ -532,9 +549,9 @@ pub enum PlayMode {
 /// screen down on their own. That is the purity rule paying off: there is no
 /// "unload the background, stop the music, despawn the cast" teardown to write
 /// or to forget.
-pub fn reset<S: SceneKey>(
+pub fn reset<S: GameScript>(
     state: &mut StoryState<S>,
-    script: &Script<S>,
+    start: S,
     stage: &mut Stage,
     line: &mut CurrentLine,
     choices: &mut PendingChoices,
@@ -542,10 +559,10 @@ pub fn reset<S: SceneKey>(
     // A single frame at the opening scene — the stack unwinds completely, so a
     // restart cannot inherit a half-finished exploration from the last run.
     state.stack = vec![Frame::Story {
-        scene: script.start,
+        scene: start,
         step: 0,
     }];
-    state.current = (script.scene_of)(script.start);
+    state.current = start.scene();
     state.flags.clear();
     state.items.clear();
     *stage = Stage::default();
@@ -572,9 +589,8 @@ pub enum Flow {
     Ended,
 }
 
-pub fn advance<S: SceneKey>(
+pub fn advance<S: GameScript>(
     state: &mut StoryState<S>,
-    script: &Script<S>,
     stage: &mut Stage,
     line: &mut CurrentLine,
     choices: &mut PendingChoices,
@@ -591,7 +607,7 @@ pub fn advance<S: SceneKey>(
 
         let Some(step) = state.current.steps.get(here).cloned() else {
             // Ran off the end of a scene: treat as `End`.
-            if state.pop(script) {
+            if state.pop() {
                 continue;
             }
             return Flow::Ended;
@@ -636,12 +652,12 @@ pub fn advance<S: SceneKey>(
             }
             Step::JumpIf { condition, target } => {
                 if condition.holds(&state.flags, &state.items) {
-                    state.enter_scene(target, script);
+                    state.enter_scene(target);
                 } else {
                     state.set_story_step(here + 1);
                 }
             }
-            Step::JumpTo(target) => state.enter_scene(target, script),
+            Step::JumpTo(target) => state.enter_scene(target),
             Step::Explore { place } => {
                 // Step past the Explore before pushing, so returning here
                 // resumes *after* it rather than looping straight back in.
@@ -687,7 +703,7 @@ pub fn advance<S: SceneKey>(
                 return Flow::Playing(PlayMode::AwaitingChoice);
             }
             Step::End => {
-                if !state.pop(script) {
+                if !state.pop() {
                     return Flow::Ended;
                 }
             }
@@ -696,12 +712,10 @@ pub fn advance<S: SceneKey>(
 }
 
 /// Applies a place option: move, call a scene, or leave.
-pub fn take_option<S: SceneKey>(
+pub fn take_option<S: GameScript>(
     index: usize,
     state: &mut StoryState<S>,
-    script: &Script<S>,
     places: &Places,
-    scene_of_name: impl Fn(&str) -> Option<S>,
 ) -> Flow {
     let Some(place_id) = state.current_place().map(str::to_string) else {
         return Flow::Exploring;
@@ -733,15 +747,18 @@ pub fn take_option<S: SceneKey>(
             }
             Flow::Exploring
         }
-        Effect::Call(scene_name) => match scene_of_name(&scene_name) {
+        // `build.rs` has already proven every name here resolves, so the `None`
+        // arm is unreachable in a built game — it exists so a hand-edited file
+        // does nothing rather than something wrong.
+        Effect::Call(scene_name) => match S::from_name(&scene_name) {
             Some(id) => {
-                state.call_scene(id, script);
+                state.call_scene(id);
                 Flow::Playing(PlayMode::Revealing)
             }
             None => Flow::Exploring,
         },
         Effect::Leave => {
-            if state.pop(script) {
+            if state.pop() {
                 match state.stack.last() {
                     Some(Frame::Explore { .. }) => Flow::Exploring,
                     _ => Flow::Playing(PlayMode::Revealing),
@@ -754,11 +771,7 @@ pub fn take_option<S: SceneKey>(
 }
 
 /// Applies the player's answer to a branch.
-pub fn take_choice<S: SceneKey>(
-    index: usize,
-    state: &mut StoryState<S>,
-    script: &Script<S>,
-) -> bool {
+pub fn take_choice<S: GameScript>(index: usize, state: &mut StoryState<S>) -> bool {
     let Some(here) = state.story_step() else {
         return false;
     };
@@ -779,6 +792,6 @@ pub fn take_choice<S: SceneKey>(
     }
     // A branch replaces the current scene rather than pushing: choosing is not
     // calling, so there is nothing to return to.
-    state.enter_scene(choice.target, script);
+    state.enter_scene(choice.target);
     true
 }

@@ -11,6 +11,7 @@ and get rewritten freely; this file is what preserves the history behind them.
 
 | Date | Decision | Entry |
 | --- | --- | --- |
+| 2026-08-06 | `GameScript` trait replaces three function pointers — argued on readability, not on churn | [2026-08-06](#2026-08-06) |
 | 2026-08-05 | The frame has one stated order — five system sets, not three unordered chains | [2026-08-05](#2026-08-05) |
 | 2026-08-05 | Saves live in a per-user OS directory, written atomically; the library takes it as a resource | [2026-08-05](#2026-08-05) |
 | 2026-08-05 | Saves store what cannot be derived — including the playing track, excluding cached fields | [2026-08-05](#2026-08-05) |
@@ -25,6 +26,99 @@ and get rewritten freely; this file is what preserves the history behind them.
 | 2026-07-30 | Snapshot saves, not `bevy_world_serialization` | [2026-07-30](#2026-07-30) |
 | 2026-07-30 | Cargo workspace over independent projects sharing a target dir | [2026-07-30](#2026-07-30) |
 | 2026-07-30 | Rust toolchain and build cache on D:, not the system drive | [2026-07-30](#2026-07-30) |
+
+---
+
+## 2026-08-06
+
+### What happened
+
+A critical review of the codebase — asked for in three categories: antipatterns
+we implemented ourselves, good patterns available and not applied, and
+unnecessary engineering. Ten findings, written up in
+`games/graphical_adventure_test/ENGINEERING_REVIEW.md` with each one's evidence,
+correction and cost, so the decisions could be made with the reasoning in view
+rather than from a summary.
+
+Then the first of them was implemented.
+
+### The review found two of our own antipatterns
+
+`AppliedStage` and `StoryState::current` are both caches of things the world
+already knows — the exact rule in the antipatterns document, committed twice
+after writing it down. Neither is currently wrong; both rest on every future
+teardown path remembering they exist, which is how the `Local` cache shipped a
+dead end.
+
+The measurable one: **194 leaked temp directories** from test runs. 193 from a
+harness that never cleans up, and one from the test that *does* — which leaked
+from the run where its guarantee was deliberately broken, because its cleanup is
+a trailing statement and the assertion panicked first. **Cleanup that is not a
+`Drop` guard runs only when the test passes**, which is the case where it matters
+least.
+
+### Decision: `GameScript`, and a correction about how it was argued
+
+Three function pointers described the game's scenes — `Script::scene_of`, and
+`SceneLookup`'s `of_name` and `name_of` — spread over two resources and two
+plugin fields. The review first filed this as *unnecessary engineering to leave
+alone*: a trait with one implementor is over-engineering, the churn buys nothing.
+
+Asked directly which version a human would find easier to read and maintain, that
+answer did not survive. It had answered **"is it worth the churn"** — a cost
+question — while presenting itself as a quality judgement. On the question
+actually asked, the function pointers lose:
+
+- **they defeat IDE navigation** — "go to definition" on `(script.scene_of)(id)`
+  lands on the field, not the function that runs, because a function pointer is
+  a value and values cannot be followed;
+- **they threaded a parameter through 7 systems and 8 functions**, almost
+  entirely so something could eventually call one of them;
+- `(script.scene_of)(*scene)` appears seven times and reads like nothing else in
+  the codebase.
+
+One trait replaced all of it. `Script` and `SceneLookup` are gone, `VnPlugin`
+went from seven fields to five, and `&script` disappeared from every signature
+that only carried it.
+
+**Measured: 175 lines added, 226 removed — 51 fewer, including the new trait and
+its documentation.** All 39 tests passed unchanged, which is the entire
+verification a behaviour-preserving refactor is entitled to.
+
+### The general lesson, which is about arguing rather than about Rust
+
+Two different questions were being conflated:
+
+| Question | Answer for this refactor |
+| --- | --- |
+| Is it worth the churn? | Marginal — no behaviour changes, no new tests |
+| Which is easier to read and maintain? | The trait, clearly |
+
+A cost answer dressed as a quality answer is hard to spot precisely because it
+is not wrong — it is just answering something else. Asking *which is better for a
+human* separately from *is it worth doing now* is what separated them.
+
+There was also a scheduling insight worth keeping: **deferring a refactor whose
+cost compounds is a decision to pay more later.** Narrowing visibility (finding
+B4) costs the same whenever it is done and genuinely needs a second consumer, so
+deferring it is free. This one grew with every function that threaded
+`&Script<S>`, and the exploration work had added three.
+
+### Numbers
+
+| | |
+| --- | --- |
+| Findings | 10 — 3 self-inflicted antipatterns, 4 unapplied patterns, 4 unnecessary engineering, 2 examined and cleared |
+| Implemented | 1 (C3) |
+| Tests | 39, unchanged and all passing |
+| Ambiguous system pairs | still 1, still Bevy's own |
+
+### Changed in the other documents
+
+- New: `games/graphical_adventure_test/ENGINEERING_REVIEW.md`, added to the
+  documentation-alignment test's list so its citations are checked.
+- Guide: nothing yet — the general lessons here are about *how the decision was
+  argued*, and are recorded above until a second instance confirms them.
 
 ---
 
