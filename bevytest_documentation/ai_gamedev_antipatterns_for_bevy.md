@@ -291,6 +291,7 @@ this and bit twice more the same week:
 | --- | --- | --- |
 | A branch whose *guarded* option came last | The surviving option kept index 0, so a bug renumbering options after filtering produced the same answer | Put the guarded option first |
 | No option claiming the reserved "empty" colour | The assertion that the reserved colour selects nothing held whether or not the guard existed | Add a deliberately mis-authored option claiming it |
+| Scenes that used `Background`, `Music` and `Show` but never `Hide` | A replay that ignored `Hide` left a character on screen and the comparison still matched | Add a `Hide`, and say in a comment that the fixture must exercise every construct |
 
 Both were found by breaking the code and watching the test stay green. A fixture
 chosen for readability tends to be the one where indices, defaults and

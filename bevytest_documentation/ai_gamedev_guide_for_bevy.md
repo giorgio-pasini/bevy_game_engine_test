@@ -136,6 +136,48 @@ Two consequences worth taking:
 > went red: the ambient field, the restored flags, and the cursor correction
 > below.
 
+### Put test cleanup in `Drop`, never at the end of the test
+`[rust]` `[testing]` — **measured**
+
+A `remove_dir_all` as a test's last statement runs only when the test **passes**.
+The run that leaves the mess is the one that failed — and the run you most want
+repeatable is the one you are debugging.
+
+```rust
+struct TempDir(PathBuf);
+impl Drop for TempDir {
+    fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+}
+```
+
+`Drop` runs while the stack unwinds, so a panicking assertion cleans up too. In
+a Bevy test, holding the guard **as a resource** is neater still: it dies with
+the `App`, so no test needs a cleanup line at all.
+
+> Measured: a harness with no cleanup had left **194 directories**. The one test
+> that did tidy up had leaked exactly once — from the run where its guarantee was
+> deliberately broken to prove the test worked. After the guard: a run leaves 5
+> behind without it, and none with it.
+
+### When two pieces of code must agree, test that they agree
+`[architecture]` `[testing]` — **confirmed**
+
+Two interpreters of the same data — an engine and a replay, a writer and a
+reader, a validator and a runtime — drift silently, because each is
+self-consistent. Nothing type-checks "these two agree".
+
+Assert the agreement directly rather than testing each half:
+
+> A visual novel had `advance` (runs the story) and `replay` (rebuilds the screen
+> from a cursor after a load or a phase change). Their disagreement had already
+> shipped twice — blank scenes, and music that stopped. The test is one property:
+> run the engine to a stopping point, replay to the cursor it stopped at, and the
+> two screens must be equal.
+
+Such a test only sees the cases its fixture exercises, so the fixture must use
+**every** construct the two interpreters handle — and say so in a comment, since
+the next person adding a construct has to add it there too.
+
 ### Assert idempotence, not just success
 `[testing]` — **measured**
 

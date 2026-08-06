@@ -18,9 +18,9 @@ evidence, the correction, and what the correction costs — in lines, in risk, a
 in what would verify it.
 
 This document exists to make the decisions before the edits, so each finding is
-written as a proposal. **One has since been carried out** — C3, on 2026-08-06 —
-and carries an outcome banner; the rest stand as written. The status table at the
-end is the quick answer to "what is left".
+written as a proposal. **Five have since been carried out** — C3, B1, B2, A3 and
+C2, all on 2026-08-06 — and each carries an outcome banner; the rest stand as
+written. The status table at the end is the quick answer to "what is left".
 
 ---
 
@@ -103,6 +103,10 @@ the compiler finds every use, and nothing can be missed silently.
 
 ### A3. The availability check is written four times
 
+> **Done 2026-08-06.** One `story::allowed(&condition, flags, items)`, used by
+> all four sites. Verified by making it always permit, which failed the
+> exhaustive branch walk.
+
 **What.** "Does this condition allow this option" appears in four places: once
 in `Places::available` in `vn_core/src/place.rs`, and three times in
 `vn_core/src/story.rs` — filtering a branch's choices, re-checking in
@@ -124,6 +128,11 @@ flags, items) -> bool` — used by all four.
 ## B — good patterns available, not applied
 
 ### B1. The tests leak temporary directories — 194 of them
+
+> **Done 2026-08-06.** A `TempSaves` guard is held **as a resource**, so it dies
+> with the `App` and no test needed a cleanup line. Measured: without it a run
+> leaves 5 directories behind, with it the count does not move. The 224 that had
+> accumulated by then were deleted.
 
 **What.** `harness()` in `demo_game/src/app_tests.rs` gives every test its own
 save directory under the system temp folder, and never removes it. Measured
@@ -162,6 +171,12 @@ one command — worth doing knowingly rather than as a side effect.
 ---
 
 ### B2. Nothing checks that replay agrees with the engine
+
+> **Done 2026-08-06.** `replay_reproduces_exactly_the_stage_the_engine_built`
+> runs the engine to a stopping point, replays to the cursor it stopped at, and
+> compares the two `Stage`s. The fixture gained a `Hide` so all four stage
+> effects are exercised — verified by making the replay ignore `Hide`, which
+> failed that test and only that test.
 
 **What.** There are two interpreters of `Step` in `vn_core/src/lib.rs` and
 `vn_core/src/story.rs`: `advance`, which runs the story, and
@@ -269,6 +284,9 @@ it end to end.
 ---
 
 ### C2. `tools/mapgen` is a whole crate for placeholder art
+
+> **Done 2026-08-06** — the note, not the deletion. Its header now opens with
+> *delete this crate when real map art lands*, with the reason.
 
 **What.** 175 lines, its own manifest and lockfile, an `image` dependency, and a
 deliberate exclusion from the workspace — all to generate a map picture and its
@@ -457,7 +475,7 @@ Grouped so each stage is independently valuable and independently abandonable.
 | Stage | Findings | Why together |
 | --- | --- | --- |
 | ~~1~~ | ~~**C3**~~ — **done 2026-08-06** | Done first because its cost compounds: every function added that threads `&Script<S>` makes it bigger. Purely mechanical, and the existing tests were the proof. |
-| 2 | B1, B2, A3, C2 | Cheap, no-risk, no design decisions. Removes the litter, closes the highest-value test gap, and writes down the mapgen expiry. |
+| ~~2~~ | ~~B1, B2, A3, C2~~ — **done 2026-08-06** | Cheap, no-risk, no design decisions. Removed the litter, closed the highest-value test gap, and wrote down the mapgen expiry. |
 | 3 | Colours, C1 | Two contained simplifications with a decision each — palette location, and whether the load hop is worth its resource. |
 | 4 | A1, A2 | The two real refactors. Both remove a cache this project has already been bitten by. Do them one at a time, each verified by breaking the tests that cover it. |
 | 5 | B3, C4 | Structural tidying with no behavioural effect. |

@@ -54,15 +54,34 @@ fn harness() -> App {
     // Saves must never land in the player's game folder from a test run, and two
     // tests must never share a slot file.
     let root = std::env::temp_dir().join(format!(
-        "vn_core_test_saves_{}_{:?}",
+        "vn_core_test_saves_{}_{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0)
     ));
-    app.insert_resource(SaveSlots { root });
+    app.insert_resource(SaveSlots { root: root.clone() });
+    // Held *as a resource* so it dies with the `App` — which happens at the end
+    // of the test whether it passed or panicked, and needs no cleanup line in
+    // any test. 194 directories had accumulated before this existed.
+    app.insert_resource(TempSaves(root));
     app
+}
+
+/// Deletes a test's save directory when the world holding it is dropped.
+///
+/// `Drop` rather than a cleanup call at the end of a test, because a cleanup
+/// call runs only when the test *passes*. The one test that did tidy up still
+/// leaked a directory — from the run where its assertion was deliberately broken
+/// to prove it worked, which is precisely when the cleanup line is skipped.
+#[derive(Resource)]
+struct TempSaves(std::path::PathBuf);
+
+impl Drop for TempSaves {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
 }
 
 fn slots(app: &App) -> SaveSlots {

@@ -16,6 +16,12 @@
 //! does nothing, with no error anywhere. Here that is impossible by
 //! construction.
 //!
+//! **Delete this crate when real map art lands.** Its whole justification is
+//! that placeholder art and its lookup must agree, and it guarantees that by
+//! generating both. Once an artist supplies the images, that guarantee moves to
+//! `build.rs`'s pixel audit and this becomes a crate nobody runs, with a
+//! dependency nobody audits.
+//!
 //! When real art replaces this, the guarantee moves to `demo_game/build.rs`,
 //! which checks the lookup for lossy encoding, stray colours (anti-aliased
 //! edges), missing regions and unclickably small ones.

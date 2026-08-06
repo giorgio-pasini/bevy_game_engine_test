@@ -98,8 +98,18 @@ fn content(id: Test) -> Scene<Test> {
                 },
             ]),
         ],
+        // Carries a `Show` *and* a `Hide` so the replay-agreement test below has
+        // every stage effect to compare. Without the `Hide`, a replay that
+        // ignored it would leave a character on screen and nothing would notice.
         Test::Ending => vec![
             bg(),
+            Step::Show {
+                character: "golem".into(),
+                slot: Slot::Right,
+            },
+            Step::Hide {
+                slot: Slot::Right,
+            },
             Step::Add {
                 flag: "counter".into(),
                 delta: 1,
@@ -306,6 +316,48 @@ fn rewind_steps_back_over_a_line_but_never_over_a_branch() {
     state.push_place("hall".into());
     state.rewind_to_current_line();
     assert_eq!(state.current_place(), Some("hall"));
+}
+
+/// The engine and the replay must agree about what a scene puts on screen.
+///
+/// There are two interpreters of `Step`: `advance`, which runs the story, and
+/// `replay_story_frame`, which rebuilds the stage from a cursor position after a
+/// phase change or a load. Nothing but care has kept them in step, and when they
+/// disagree the screen silently contradicts the story — which is how scenes
+/// shipped blank and how the music once stopped.
+///
+/// The property: running the engine to a stopping point, and replaying to the
+/// cursor it stopped at, must produce the *same* `Stage`.
+///
+/// This can only see a divergence in a step the fixture actually uses, so the
+/// fixture deliberately exercises all four stage effects — `Background`,
+/// `Music`, `Show` and `Hide`. A new stage-affecting variant must be added
+/// there too, or this test will not be watching it.
+#[test]
+fn replay_reproduces_exactly_the_stage_the_engine_built() {
+    for id in [Test::Opening, Test::Branch, Test::Ending] {
+        let mut state = state_at(id, 0);
+        let (mut engine, mut line, mut choices) = (
+            Stage::default(),
+            CurrentLine::default(),
+            PendingChoices::default(),
+        );
+        advance(&mut state, &mut engine, &mut line, &mut choices);
+
+        // Where the engine stopped. `End` pops the frame, so a scene that ran to
+        // completion has no cursor left — that is the whole scene replayed.
+        let cursor = state.story_step().unwrap_or_else(|| id.scene().steps.len());
+
+        let mut replayed = Stage::default();
+        crate::replay_story_frame(&id.scene(), cursor, &mut replayed);
+
+        assert_eq!(
+            replayed, engine,
+            "scene `{}` at step {cursor}: the replay built a different stage than \
+             the engine did — the two interpreters of `Step` have diverged",
+            id.name()
+        );
+    }
 }
 
 // ----------------------------------------------------------------- place ---
@@ -516,6 +568,16 @@ fn writing_a_slot_replaces_it_atomically_and_leaves_no_staging_file() {
         .unwrap_or(0);
     let root = std::env::temp_dir().join(format!("vn_core_atomic_{}_{unique}", std::process::id()));
     let slots = SaveSlots { root: root.clone() };
+    // Cleans up on the way out even if an assertion below panics — which is
+    // exactly the run that used to leak, since a trailing `remove_dir_all` is
+    // never reached when a test fails.
+    struct TempDir(std::path::PathBuf);
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    let _cleanup = TempDir(root.clone());
 
     let first = SaveState {
         flags: BTreeMap::from([("counter".to_string(), 1)]),
@@ -539,7 +601,6 @@ fn writing_a_slot_replaces_it_atomically_and_leaves_no_staging_file() {
         "the staging file must not survive a successful write"
     );
 
-    let _ = std::fs::remove_dir_all(&root);
 }
 
 #[test]

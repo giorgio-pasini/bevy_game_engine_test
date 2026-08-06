@@ -104,11 +104,7 @@ impl Places {
                 p.options
                     .iter()
                     .enumerate()
-                    .filter(|(_, o)| {
-                        o.condition
-                            .as_ref()
-                            .is_none_or(|c| c.holds(flags, items))
-                    })
+                    .filter(|(_, o)| crate::story::allowed(&o.condition, flags, items))
                     .collect()
             })
             .unwrap_or_default()

@@ -216,6 +216,20 @@ impl Condition {
     }
 }
 
+/// Whether an optional guard permits something. `None` always permits.
+///
+/// One function rather than four copies of `is_none_or(|c| c.holds(..))`. The
+/// copies were identical, which is exactly why they would not have stayed that
+/// way: a filter that offers an option and a re-check that accepts the click
+/// must agree, and agreement by inspection is not agreement.
+pub fn allowed(
+    condition: &Option<Condition>,
+    flags: &BTreeMap<String, i32>,
+    items: &BTreeSet<String>,
+) -> bool {
+    condition.as_ref().is_none_or(|c| c.holds(flags, items))
+}
+
 #[derive(Clone)]
 pub enum Step<S> {
     /// Replace the background image.
@@ -479,7 +493,7 @@ impl<S: GameScript> StoryState<S> {
 }
 
 /// Derived presentation state. Rebuilt from the story, never authored directly.
-#[derive(Resource, Default, PartialEq, Eq, Clone)]
+#[derive(Resource, Default, PartialEq, Eq, Clone, Debug)]
 pub struct Stage {
     pub background: Option<String>,
     pub characters: BTreeMap<Slot, String>,
@@ -691,11 +705,7 @@ pub fn advance<S: GameScript>(
                 choices.items = items
                     .iter()
                     .enumerate()
-                    .filter(|(_, c)| {
-                        c.condition
-                            .as_ref()
-                            .is_none_or(|cond| cond.holds(&state.flags, &state.items))
-                    })
+                    .filter(|(_, c)| allowed(&c.condition, &state.flags, &state.items))
                     .map(|(i, c)| (c.text.clone(), i))
                     .collect();
                 // Deliberately does not step: the branch is resolved by the
@@ -729,11 +739,7 @@ pub fn take_option<S: GameScript>(
     };
 
     // Re-check the guard: a button can outlive the state that offered it.
-    if !option
-        .condition
-        .as_ref()
-        .is_none_or(|c| c.holds(&state.flags, &state.items))
-    {
+    if !allowed(&option.condition, &state.flags, &state.items) {
         return Flow::Exploring;
     }
 
@@ -783,11 +789,7 @@ pub fn take_choice<S: GameScript>(index: usize, state: &mut StoryState<S>) -> bo
     };
     // Re-check the guard: a button could otherwise outlive the state that made
     // its option available.
-    if !choice
-        .condition
-        .as_ref()
-        .is_none_or(|c| c.holds(&state.flags, &state.items))
-    {
+    if !allowed(&choice.condition, &state.flags, &state.items) {
         return false;
     }
     // A branch replaces the current scene rather than pushing: choosing is not

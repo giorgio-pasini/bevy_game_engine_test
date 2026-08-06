@@ -113,12 +113,51 @@ deferring it is free. This one grew with every function that threaded
 | Tests | 39, unchanged and all passing |
 | Ambiguous system pairs | still 1, still Bevy's own |
 
+### Then stage 2: the cheap findings, led by the valuable one
+
+**The replay/advance agreement test** — the highest-value gap the review found.
+Two interpreters of `Step` have to agree about what a scene puts on screen, and
+until now only care kept them together. When they diverge the screen silently
+contradicts the story, which is how scenes shipped blank and how the music once
+stopped.
+
+The property is simple: run the engine to a stopping point, replay to the cursor
+it stopped at, and the two `Stage`s must be equal.
+
+Writing it exposed a fixture gap immediately. The synthetic scenes used
+`Background`, `Music` and `Show` but never `Hide` — so a replay that ignored
+`Hide` would have left a character on screen with nothing to notice. Adding one
+made the test able to fail, confirmed by making the replay drop `Hide`: that test
+went red and nothing else did. **Third time this week that a fixture, not the
+assertion, was what limited a test.**
+
+**The temp-directory leak, measured rather than argued.** A `TempSaves` guard is
+now held *as a resource*, so it dies with the `App` — on failure as well as
+success, and with no cleanup line in any test. Without it a run leaves 5
+directories behind; with it the count does not move. The 224 that had piled up
+were deleted.
+
+Also: one `allowed()` helper replacing four identical guard checks, verified by
+making it always permit (the exhaustive branch walk caught it), and an expiry
+note on `tools/mapgen` saying to delete the crate when real art lands.
+
+### Numbers
+
+| | |
+| --- | --- |
+| Findings | 10 — 3 self-inflicted antipatterns, 4 unapplied patterns, 4 unnecessary engineering, 2 examined and cleared |
+| Implemented | 5 — C3, B2, B1, A3, C2 |
+| Tests | 40 — 16 `vn_core` unit, 22 `demo_game` app/content, 2 documentation alignment |
+| Verified by deletion | 4 more, each taking down exactly the expected test |
+| Temp directories leaked per run | 5 → 0 |
+
 ### Changed in the other documents
 
 - New: `games/graphical_adventure_test/ENGINEERING_REVIEW.md`, added to the
-  documentation-alignment test's list so its citations are checked.
-- Guide: nothing yet — the general lessons here are about *how the decision was
-  argued*, and are recorded above until a second instance confirms them.
+  documentation-alignment test's list so its citations are checked. Five of its
+  ten findings now carry outcome banners.
+- Guide: *cleanup belongs in `Drop`, not at the end of a test* — see below.
+- Antipatterns: the fixture-strength entry gained a third instance.
 
 ---
 
