@@ -251,6 +251,13 @@ setting it.
 The general form: **if a variable's job is to describe something the world
 already knows, delete it and ask the world.**
 
+**Later recurrence, 2026-08-13.** `AppliedStage` separately remembered which
+background, cast and track presentation had spawned. It was replaced by asking
+the entities themselves, with four headless tests asserting both agreement and
+idempotence. `StoryState::current` was worth retaining because deriving it
+clones a scene including its prose; its stack and cache are now private behind
+one invariant-preserving API, so callers cannot desynchronise them.
+
 ---
 
 ## Writing a test that passes for the wrong reason

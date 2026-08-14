@@ -24,9 +24,9 @@ use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::state::app::StatesPlugin;
 use bevy::window::WindowResolution;
 use vn_core::prelude::*;
-// Not in the prelude: it is an internal presentation detail, but asserting on it
-// is precisely how these tests check "would the player see buttons?".
-use vn_core::present::PlaceOptionButton;
+// Not in the prelude: these are internal presentation details, but asserting on
+// them is precisely how these tests check what a player would actually see.
+use vn_core::present::{BackgroundSprite, CharacterSprite, MusicPlayer, PlaceOptionButton};
 
 use crate::scenes;
 
@@ -433,8 +433,7 @@ fn a_save_two_frames_deep_restores_the_whole_stack() {
     // Wander off somewhere else entirely, then load.
     app.world_mut()
         .resource_mut::<StoryState<scenes::SceneId>>()
-        .stack
-        .truncate(1);
+        .unwind_to_root();
     load_now(&mut app);
 
     let after = capture_now(&app);
@@ -558,6 +557,170 @@ fn a_load_restores_the_soundtrack() {
     );
 }
 
+// ------------------------------------------------------ what is on screen --
+//
+// Everything else asserts on `Stage` — what the story *decided* should be
+// shown. Nothing asserted on the sprites and audio players the reconcilers
+// actually spawn, so every one of them could have been deleted with the suite
+// still green. These four watch the screen instead of the intention.
+
+#[test]
+fn the_story_puts_a_background_sprite_on_screen() {
+    let mut app = harness();
+    settle(&mut app);
+    go(&mut app, AppState::Playing);
+
+    let wanted = app.world().resource::<Stage>().background.clone();
+    assert!(wanted.is_some(), "precondition: the opening sets a background");
+
+    let showing: Vec<String> = app
+        .world_mut()
+        .query::<&BackgroundSprite>()
+        .iter(app.world())
+        .map(|bg| bg.0.clone())
+        .collect();
+    assert_eq!(
+        showing.len(),
+        1,
+        "exactly one background should be on screen, found {showing:?}"
+    );
+    assert_eq!(
+        showing.first().map(String::as_str),
+        wanted.as_deref(),
+        "the sprite is showing something other than what the story asked for"
+    );
+}
+
+#[test]
+fn the_cast_on_screen_matches_the_cast_in_the_story() {
+    let mut app = harness();
+    settle(&mut app);
+    go(&mut app, AppState::Playing);
+    // Far enough in that both characters have been staged.
+    for _ in 0..6 {
+        advance_once(&mut app);
+    }
+    settle(&mut app);
+
+    let wanted = app.world().resource::<Stage>().characters.clone();
+    assert!(!wanted.is_empty(), "precondition: someone should be on stage");
+
+    let on_screen: std::collections::BTreeMap<Slot, String> = app
+        .world_mut()
+        .query::<&CharacterSprite>()
+        .iter(app.world())
+        .map(|c| (c.slot, c.id.clone()))
+        .collect();
+    assert_eq!(
+        on_screen, wanted,
+        "the sprites on screen are not the cast the story staged"
+    );
+}
+
+#[test]
+fn the_track_the_story_asked_for_is_the_one_playing() {
+    let mut app = harness();
+    settle(&mut app);
+    go(&mut app, AppState::Playing);
+
+    let wanted = app.world().resource::<Stage>().music.clone();
+    assert!(wanted.is_some(), "precondition: the opening starts music");
+
+    let playing: Vec<String> = app
+        .world_mut()
+        .query::<&MusicPlayer>()
+        .iter(app.world())
+        .map(|m| m.0.clone())
+        .collect();
+    assert_eq!(playing.len(), 1, "one track at a time, found {playing:?}");
+    assert_eq!(playing.first().map(String::as_str), wanted.as_deref());
+}
+
+/// A reconciler must do **nothing** when nothing changed.
+///
+/// This is the property the deleted `AppliedStage` cache used to provide and
+/// that comparing against the world now provides. Getting it wrong is not
+/// subtle: a background that respawns every frame flickers, and music that
+/// respawns every frame restarts sixty times a second. Nothing else in the
+/// suite would notice, because `Stage` would look perfectly correct throughout.
+#[test]
+fn an_unchanged_stage_is_not_rebuilt() {
+    let mut app = harness();
+    settle(&mut app);
+    go(&mut app, AppState::Playing);
+
+    let ids = |app: &mut App| -> (Vec<Entity>, Vec<Entity>) {
+        let backgrounds = app
+            .world_mut()
+            .query_filtered::<Entity, With<BackgroundSprite>>()
+            .iter(app.world())
+            .collect();
+        let music = app
+            .world_mut()
+            .query_filtered::<Entity, With<MusicPlayer>>()
+            .iter(app.world())
+            .collect();
+        (backgrounds, music)
+    };
+
+    let before = ids(&mut app);
+    assert!(
+        !before.0.is_empty() && !before.1.is_empty(),
+        "precondition: a background and a track should exist"
+    );
+
+    // Several frames with no story movement at all.
+    settle(&mut app);
+    settle(&mut app);
+
+    assert_eq!(
+        ids(&mut app),
+        before,
+        "the reconcilers replaced entities that did not need replacing — the \
+         background would flicker and the music would restart every frame"
+    );
+}
+
+/// The screen can change without notifying the reconcilers. This is the exact
+/// failure mode `AppliedStage` could not survive: its cache still said the
+/// background and track were applied after their entities had disappeared.
+#[test]
+fn presentation_recovers_when_spawned_entities_disappear() {
+    let mut app = harness();
+    settle(&mut app);
+    go(&mut app, AppState::Playing);
+
+    let background = app
+        .world_mut()
+        .query_filtered::<Entity, With<BackgroundSprite>>()
+        .single(app.world())
+        .expect("precondition: one background is on screen");
+    let music = app
+        .world_mut()
+        .query_filtered::<Entity, With<MusicPlayer>>()
+        .single(app.world())
+        .expect("precondition: one track is playing");
+
+    assert!(app.world_mut().despawn(background));
+    assert!(app.world_mut().despawn(music));
+    app.update();
+    app.update(); // apply the spawn commands queued by the reconcilers
+
+    let replacement_background = app
+        .world_mut()
+        .query_filtered::<Entity, With<BackgroundSprite>>()
+        .single(app.world())
+        .expect("the missing background should be restored");
+    let replacement_music = app
+        .world_mut()
+        .query_filtered::<Entity, With<MusicPlayer>>()
+        .single(app.world())
+        .expect("the missing track should be restarted");
+
+    assert_ne!(replacement_background, background);
+    assert_ne!(replacement_music, music);
+}
+
 // ------------------------------------------------------------- the input --
 //
 // Everything below drives the app the way a player does. This is the layer
@@ -583,8 +746,7 @@ fn f5_saves_and_f9_loads_through_the_real_key_bindings() {
     // Wander off, then come back with F9.
     app.world_mut()
         .resource_mut::<StoryState<scenes::SceneId>>()
-        .stack
-        .truncate(1);
+        .unwind_to_root();
     tap_key(&mut app, KeyCode::F9, Key::F9);
     settle(&mut app);
 

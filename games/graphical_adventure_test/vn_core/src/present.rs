@@ -21,8 +21,16 @@ const BOX_HEIGHT: f32 = 260.0;
 const Z_BACKGROUND: f32 = 0.0;
 const Z_CHARACTER: f32 = 1.0;
 
+/// The background on screen, carrying **the path it is showing**.
+///
+/// The identity lives on the entity rather than in a resource that remembers
+/// what was drawn. That was the shape of the `Local` cache which once refused to
+/// redraw a place because it believed it already had — and of `AppliedStage`,
+/// which this replaces. A component cannot fall out of step with the entity it
+/// is attached to: despawn the sprite and the answer to "what is on screen"
+/// changes with it.
 #[derive(Component)]
-pub struct BackgroundSprite;
+pub struct BackgroundSprite(pub String);
 
 /// A character on stage. Carries the cast id so the speaker cue can tell which
 /// sprite is talking — the link that did not exist when `Show` took a path.
@@ -52,8 +60,9 @@ pub struct ChoiceRoot;
 #[derive(Component)]
 pub struct ChoiceButton(pub usize);
 
+/// The playing track, carrying **which track it is**. See [`BackgroundSprite`].
 #[derive(Component)]
-pub struct MusicPlayer;
+pub struct MusicPlayer(pub String);
 
 /// A non-story button. Story choices use [`ChoiceButton`] instead, because they
 /// carry an index into the current branch rather than a fixed action.
@@ -189,15 +198,6 @@ pub fn spawn_end_screen(mut commands: Commands, locale: Res<Locale>) {
     ));
 }
 
-/// Tracks what the presentation has already applied, so each reconcile system
-/// can tell what actually changed rather than rebuilding every frame.
-#[derive(Resource, Default)]
-pub struct AppliedStage {
-    pub background: Option<String>,
-    pub characters: BTreeMap<Slot, String>,
-    pub music: Option<String>,
-}
-
 /// Spawned on entering `Playing` and torn down automatically on leaving it.
 pub fn spawn_ui(mut commands: Commands) {
     // Dialogue box, pinned to the bottom of the design area.
@@ -263,14 +263,17 @@ pub fn spawn_ui(mut commands: Commands) {
 pub fn sync_background(
     mut commands: Commands,
     stage: Res<Stage>,
-    mut applied: ResMut<AppliedStage>,
     assets: Res<AssetServer>,
-    existing: Query<Entity, With<BackgroundSprite>>,
+    existing: Query<(Entity, &BackgroundSprite)>,
 ) {
-    if applied.background == stage.background {
+    // Asks the screen what it is showing rather than remembering what was sent
+    // to it. Equal means there is nothing to do — including the case where both
+    // are "nothing".
+    let showing = existing.iter().next().map(|(_, bg)| bg.0.as_str());
+    if showing == stage.background.as_deref() {
         return;
     }
-    for e in &existing {
+    for (e, _) in &existing {
         commands.entity(e).despawn();
     }
     if let Some(path) = stage.background.as_ref() {
@@ -282,10 +285,9 @@ pub fn sync_background(
                 ..default()
             },
             Transform::from_xyz(0.0, 0.0, Z_BACKGROUND),
-            BackgroundSprite,
+            BackgroundSprite(path.clone()),
         ));
     }
-    applied.background = stage.background.clone();
 }
 
 pub fn sync_characters(
@@ -293,11 +295,15 @@ pub fn sync_characters(
     stage: Res<Stage>,
     cast: Res<Cast>,
     tuning: Res<Presentation>,
-    mut applied: ResMut<AppliedStage>,
     assets: Res<AssetServer>,
     existing: Query<(Entity, &CharacterSprite)>,
 ) {
-    if applied.characters == stage.characters {
+    // Who is actually on stage, taken from the stage itself.
+    let on_stage: BTreeMap<Slot, String> = existing
+        .iter()
+        .map(|(_, c)| (c.slot, c.id.clone()))
+        .collect();
+    if on_stage == stage.characters {
         return;
     }
     for (e, _) in &existing {
@@ -329,7 +335,6 @@ pub fn sync_characters(
             },
         ));
     }
-    applied.characters = stage.characters.clone();
 }
 
 /// Sizes each character to a fixed height, preserving the image's aspect ratio.
@@ -416,14 +421,14 @@ pub fn speaker_cue(
 pub fn sync_music(
     mut commands: Commands,
     stage: Res<Stage>,
-    mut applied: ResMut<AppliedStage>,
     assets: Res<AssetServer>,
-    existing: Query<Entity, With<MusicPlayer>>,
+    existing: Query<(Entity, &MusicPlayer)>,
 ) {
-    if applied.music == stage.music {
+    let playing = existing.iter().next().map(|(_, m)| m.0.as_str());
+    if playing == stage.music.as_deref() {
         return;
     }
-    for e in &existing {
+    for (e, _) in &existing {
         commands.entity(e).despawn();
     }
     if let Some(path) = stage.music.as_ref() {
@@ -434,10 +439,9 @@ pub fn sync_music(
                 volume: bevy::audio::Volume::Linear(0.5),
                 ..default()
             },
-            MusicPlayer,
+            MusicPlayer(path.clone()),
         ));
     }
-    applied.music = stage.music.clone();
 }
 
 /// Typewriter. Reveals by *count*, never by mutating the source string — so

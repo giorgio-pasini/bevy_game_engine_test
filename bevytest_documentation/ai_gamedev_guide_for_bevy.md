@@ -104,6 +104,12 @@ The tell is a variable whose job is to describe something the world already
 knows. Whenever you find one, ask what happens when the world changes without
 telling it — and in an ECS, the world changes without telling anything.
 
+When a cache is retained because deriving it is materially expensive, make the
+source and cache private behind one invariant-preserving API. Construction,
+restoration and mutation must all pass through that API, with exactly one place
+deriving the cached value. This turns "remember to keep these fields aligned"
+from a comment into something callers cannot violate.
+
 ### Save exactly what cannot be derived — no less, and no more
 `[architecture]` — **measured**
 

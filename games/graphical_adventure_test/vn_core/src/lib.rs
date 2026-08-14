@@ -86,17 +86,8 @@ impl<S: GameScript> Plugin for VnPlugin<S> {
         .insert_resource(self.cast.clone())
         .insert_resource(self.tuning.clone())
         .insert_resource(self.places.clone())
-        .insert_resource(StoryState::<S> {
-            stack: vec![Frame::Story {
-                scene: start,
-                step: 0,
-            }],
-            current: start.scene(),
-            flags: Default::default(),
-            items: Default::default(),
-        })
+        .insert_resource(StoryState::<S>::new(start))
         .init_resource::<Stage>()
-        .init_resource::<AppliedStage>()
         .init_resource::<CurrentLine>()
         .init_resource::<PendingChoices>()
         .init_resource::<PickedOption>()
@@ -331,7 +322,7 @@ fn replay_stack<S: GameScript>(
     // Replay every frame from the BOTTOM up. Replaying only the top frame left
     // a scene *called* from a place with nothing to replay — it sits at step 0
     // — so the screen came back blank.
-    let frames: Vec<Frame<S>> = state.stack.clone();
+    let frames: Vec<Frame<S>> = state.frames().to_vec();
     for frame in &frames {
         match frame {
             Frame::Explore { place } => {

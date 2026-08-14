@@ -18,15 +18,22 @@ evidence, the correction, and what the correction costs — in lines, in risk, a
 in what would verify it.
 
 This document exists to make the decisions before the edits, so each finding is
-written as a proposal. **Five have since been carried out** — C3, B1, B2, A3 and
-C2, all on 2026-08-06 — and each carries an outcome banner; the rest stand as
-written. The status table at the end is the quick answer to "what is left".
+written as a proposal. **Seven have since been carried out** — C3, B1, B2, A3
+and C2 on 2026-08-06, then A1 and A2 on 2026-08-13 — and each carries an
+outcome banner; the rest stand as written. The status table at the end is the
+quick answer to "what is left".
 
 ---
 
 ## A — antipatterns we implemented ourselves
 
 ### A1. `AppliedStage` caches what the world already knows
+
+> **Done 2026-08-13.** `AppliedStage` is gone. Background and music entities
+> carry the identity they display; character entities already did. Each
+> reconciler now queries the actual screen and does nothing when it already
+> matches `Stage`. Five headless tests compare requested and spawned
+> presentation, assert idempotence, and prove missing entities are recreated.
 
 **What.** `vn_core/src/present.rs` defines a resource holding the background
 path, the cast on stage and the music track that the presentation "has already
@@ -72,6 +79,12 @@ fails.
 ---
 
 ### A2. `StoryState::current` is a cached scene with five sync points
+
+> **Done 2026-08-13.** The cache remains for the performance reason below, but
+> both it and the control stack are private. Construction, restoration and
+> stack mutations go through methods that maintain the invariant, and
+> `StoryState::from_frames` is the single derivation point. A deliberately
+> discriminating restore fixture proves the *topmost* story frame wins.
 
 **What.** `StoryState` holds `current: Scene<S>`, a copy of the scene named by
 the topmost story frame. Five places must remember to update it —
@@ -477,6 +490,6 @@ Grouped so each stage is independently valuable and independently abandonable.
 | ~~1~~ | ~~**C3**~~ — **done 2026-08-06** | Done first because its cost compounds: every function added that threads `&Script<S>` makes it bigger. Purely mechanical, and the existing tests were the proof. |
 | ~~2~~ | ~~B1, B2, A3, C2~~ — **done 2026-08-06** | Cheap, no-risk, no design decisions. Removed the litter, closed the highest-value test gap, and wrote down the mapgen expiry. |
 | 3 | Colours, C1 | Two contained simplifications with a decision each — palette location, and whether the load hop is worth its resource. |
-| 4 | A1, A2 | The two real refactors. Both remove a cache this project has already been bitten by. Do them one at a time, each verified by breaking the tests that cover it. |
+| ~~4~~ | ~~A1, A2~~ — **done 2026-08-13** | `AppliedStage` was removed; the scene cache was encapsulated behind the stack invariant. Screen-level and restore tests cover both. |
 | 5 | B3, C4 | Structural tidying with no behavioural effect. |
 | — | B4 | Deliberately deferred: an API boundary drawn before a second consumer exists is a guess, and deferring it costs nothing. |

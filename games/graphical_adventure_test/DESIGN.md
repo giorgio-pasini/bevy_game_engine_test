@@ -1,7 +1,8 @@
 # Visual Novel Template — Design Document
 
-**Status:** design only. No code exists yet, and this crate is deliberately not a
-workspace member.
+**Status:** implemented and in the workspace. The original design is retained
+with dated correction notes where the implementation taught us something
+different. `vn_core/src/` and `demo_game/` are authoritative for current code.
 **Target:** Bevy 0.19.0.
 **Audience:** whoever implements this next — human or AI.
 
@@ -774,7 +775,7 @@ workspace member — see the guide on keeping tools out of the feature graph.
 
 Each milestone ends in something runnable. Never integrate big-bang.
 
-> **STATUS as of 2026-08-04.** Done: 1 (workspace), 2 (data model — now RON files
+> **STATUS as of 2026-08-13.** Done: 1 (workspace), 2 (data model — now RON files
 > plus a `build.rs` generator), 3 (stage), 4 (dialogue and typewriter),
 > 6 (choices and branching), 7 (audio), 8 (save/load, across the control stack),
 > 13 (validation — build guards, a content-graph walk, and headless app tests).
@@ -784,8 +785,8 @@ Each milestone ends in something runnable. Never integrate big-bang.
 >
 > **Added since, not in this table:** the exploration phase — control stack,
 > places, exits, actions, inventory conditions, and map hotspots (Part 6b). Its
-> own staging lives in the journal entries for 2026-08-04 and 2026-08-05; only
-> stage 5, save/load, remains.
+> own staging lives in the journal entries for 2026-08-04 and 2026-08-05. Its
+> five-stage roadmap, including save/load, is complete.
 
 | # | Milestone | Done when |
 | --- | --- | --- |
@@ -857,8 +858,11 @@ changing one, check whether anything else is pending and do them together. The
 prototype's build combined dropping `3d`, adding `jpeg`, `mp3`, `wav`,
 `bevy/dev`, `track_location`, and the `serde`/`ron` dependencies into one pass.
 
-Dropping the `3d` profile took that build from **532 crates to 75**, and the
-saving repeats on every future rebuild.
+An early report claimed dropping the `3d` profile took the build from 532 crates
+to 75. Later dependency inspection showed that this overstated the saving:
+`bevy/dev` still pulled in `bevy_pbr` and `bevy_light`. The project deliberately
+keeps `3d` enabled because a 3D probe is planned and toggling engine features is
+the expensive operation.
 
 ## Part 8b — Backlog
 

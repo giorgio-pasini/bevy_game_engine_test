@@ -242,18 +242,10 @@ mod tests {
         where
             S: Sized,
         {
-            format!("{:?}|{:?}|{:?}", s.stack, s.flags, s.items)
+            format!("{:?}|{:?}|{:?}", s.frames(), s.flags, s.items)
         }
 
-        let start_state = StoryState {
-            stack: vec![Frame::Story {
-                scene: START,
-                step: 0,
-            }],
-            current: content(START),
-            flags: Default::default(),
-            items: Default::default(),
-        };
+        let start_state = StoryState::new(START);
 
         let mut visited: BTreeSet<String> = BTreeSet::new();
         visited.insert(key::<SceneId>(&start_state));

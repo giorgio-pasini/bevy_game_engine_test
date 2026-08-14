@@ -124,12 +124,12 @@ fn content(id: Test) -> Scene<Test> {
 }
 
 fn state_at(id: Test, step: usize) -> StoryState<Test> {
-    StoryState {
-        stack: vec![Frame::Story { scene: id, step }],
-        current: content(id),
-        flags: BTreeMap::new(),
-        items: Default::default(),
-    }
+    StoryState::from_frames(
+        vec![Frame::Story { scene: id, step }],
+        BTreeMap::new(),
+        Default::default(),
+    )
+    .expect("a story frame is present")
 }
 
 /// Two rooms: one with an exit and a conditional action, one that only leaves.
@@ -232,7 +232,7 @@ fn end_pops_the_stack_and_an_empty_stack_ends_the_game() {
     let (flow, _, _, _) = advance_once(&mut state);
 
     assert_eq!(flow, Flow::Ended);
-    assert!(state.stack.is_empty());
+    assert!(state.is_over());
     assert_eq!(
         state.flags.get("counter"),
         Some(&1),
@@ -267,9 +267,9 @@ fn taking_a_choice_replaces_the_frame_rather_than_pushing() {
     let (_, _, _, _) = advance_once(&mut state);
     assert!(take_choice(1, &mut state));
 
-    assert_eq!(state.stack.len(), 1, "choosing is not calling");
+    assert_eq!(state.depth(), 1, "choosing is not calling");
     assert!(matches!(
-        state.stack.last(),
+        state.top(),
         Some(Frame::Story {
             scene: Test::Ending,
             step: 0
@@ -286,7 +286,7 @@ fn a_refused_choice_leaves_the_state_alone() {
         "the guarded option must be refused even if something clicks it"
     );
     assert!(matches!(
-        state.stack.last(),
+        state.top(),
         Some(Frame::Story {
             scene: Test::Branch,
             ..
@@ -366,13 +366,13 @@ fn replay_reproduces_exactly_the_stage_the_engine_built() {
 fn moving_between_rooms_replaces_the_frame_and_calling_pushes_one() {
     let mut state = state_at(Test::Opening, 4);
     state.push_place("hall".into());
-    let depth = state.stack.len();
+    let depth = state.depth();
 
     // GoTo: same depth, different room. Pushing here would make one `Leave`
     // unwind a single room instead of leaving exploration.
     let flow = take_option(0, &mut state, &places());
     assert_eq!(flow, Flow::Exploring);
-    assert_eq!(state.stack.len(), depth);
+    assert_eq!(state.depth(), depth);
     assert_eq!(state.current_place(), Some("cellar"));
 
     // Call: one frame deeper, and the room is still underneath.
@@ -380,8 +380,8 @@ fn moving_between_rooms_replaces_the_frame_and_calling_pushes_one() {
     state.push_place("hall".into());
     let flow = take_option(1, &mut state, &places());
     assert_eq!(flow, Flow::Playing(PlayMode::Revealing));
-    assert_eq!(state.stack.len(), depth + 1);
-    assert_eq!(state.current.id, Test::Ending);
+    assert_eq!(state.depth(), depth + 1);
+    assert_eq!(state.scene().id, Test::Ending);
 
     // Leave: back to the story frame beneath.
     let mut state = state_at(Test::Opening, 4);
@@ -525,15 +525,23 @@ fn a_snapshot_round_trips_through_capture_and_restore() {
 fn restoring_rebuilds_the_cached_scene_from_the_top_story_frame() {
     // The cache is deliberately not in the file: a save that stored it could
     // disagree with its own stack.
-    let mut state = state_at(Test::Branch, 1);
+    //
+    // **Two** story frames, with a place between them, and they name different
+    // scenes. With only one, "topmost story frame" and "any story frame" give
+    // the same answer and this test cannot tell them apart — which it could not,
+    // until a deliberate break of the derivation left it green.
+    let mut state = state_at(Test::Opening, 4);
     state.push_place("hall".into());
-    let snapshot = capture(&state, None);
+    state.call_scene(Test::Ending);
+    assert_eq!(state.depth(), 3, "story -> place -> called scene");
 
+    let snapshot = capture(&state, None);
     let restored = restore::<Test>(&snapshot).unwrap();
+
     assert_eq!(
-        restored.current.id,
-        Test::Branch,
-        "the scene under the place must be the one restored"
+        restored.scene().id,
+        Test::Ending,
+        "the innermost story frame is what is running — not the outermost"
     );
 }
 

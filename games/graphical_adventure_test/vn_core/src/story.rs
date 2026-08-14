@@ -391,10 +391,16 @@ pub enum Frame<S> {
 #[derive(Resource, Clone)]
 pub struct StoryState<S: GameScript> {
     /// Top of the stack is the current context. Empty means the game is over.
-    pub stack: Vec<Frame<S>>,
+    ///
+    /// Private, together with `current`, because the two have an invariant: the
+    /// cached scene must be the one the topmost story frame names. Every method
+    /// below maintains it; a public field would let any caller break it
+    /// silently, and the tests used to do exactly that.
+    stack: Vec<Frame<S>>,
     /// Scene cached for the topmost `Story` frame, so steps are not re-resolved
-    /// every tick.
-    pub current: Scene<S>,
+    /// every tick. Derived from `stack` — see [`StoryState::from_frames`], which
+    /// is the one place that computes it.
+    current: Scene<S>,
     /// Booleans are stored as 0/1 so flags and counters share one map.
     pub flags: BTreeMap<String, i32>,
     /// Inventory.
@@ -402,6 +408,67 @@ pub struct StoryState<S: GameScript> {
 }
 
 impl<S: GameScript> StoryState<S> {
+    /// A fresh run beginning at `start`.
+    pub fn new(start: S) -> Self {
+        Self {
+            stack: vec![Frame::Story {
+                scene: start,
+                step: 0,
+            }],
+            current: start.scene(),
+            flags: BTreeMap::new(),
+            items: BTreeSet::new(),
+        }
+    }
+
+    /// Rebuilds a state from frames — loading a save, or a test setting up a
+    /// situation.
+    ///
+    /// **The only place the cached scene is derived**, which is why it is worth
+    /// having: `restore` used to re-implement this, and a second implementation
+    /// of an invariant is how invariants stop holding. Fails when no story frame
+    /// is present, since there would be no scene to run.
+    pub fn from_frames(
+        stack: Vec<Frame<S>>,
+        flags: BTreeMap<String, i32>,
+        items: BTreeSet<String>,
+    ) -> Option<Self> {
+        let scene = stack.iter().rev().find_map(|f| match f {
+            Frame::Story { scene, .. } => Some(*scene),
+            Frame::Explore { .. } => None,
+        })?;
+        Some(Self {
+            stack,
+            current: scene.scene(),
+            flags,
+            items,
+        })
+    }
+
+    /// The control stack, innermost last. Read-only: mutating it is what the
+    /// methods below are for.
+    pub fn frames(&self) -> &[Frame<S>] {
+        &self.stack
+    }
+
+    /// What is running now, or `None` when the game is over.
+    pub fn top(&self) -> Option<&Frame<S>> {
+        self.stack.last()
+    }
+
+    pub fn depth(&self) -> usize {
+        self.stack.len()
+    }
+
+    pub fn is_over(&self) -> bool {
+        self.stack.is_empty()
+    }
+
+    /// The scene the topmost story frame is running.
+    pub fn scene(&self) -> &Scene<S> {
+        &self.current
+    }
+
     /// The step index of the topmost `Story` frame, if that is what we are in.
     pub fn story_step(&self) -> Option<usize> {
         match self.stack.last() {
@@ -449,6 +516,19 @@ impl<S: GameScript> StoryState<S> {
 
     pub fn push_place(&mut self, place: String) {
         self.stack.push(Frame::Explore { place });
+    }
+
+    /// Abandons every nested frame, leaving the run at its outermost story
+    /// frame — and re-derives the cached scene, which is the whole reason this
+    /// exists rather than callers truncating the stack themselves.
+    ///
+    /// A "quit to the outer story" would use it; the tests use it to simulate
+    /// wandering off before loading a save.
+    pub fn unwind_to_root(&mut self) {
+        self.stack.truncate(1);
+        if let Some(Frame::Story { scene, .. }) = self.stack.first() {
+            self.current = scene.scene();
+        }
     }
 
     /// Puts the cursor back onto the line that was on screen.
@@ -572,13 +652,7 @@ pub fn reset<S: GameScript>(
 ) {
     // A single frame at the opening scene — the stack unwinds completely, so a
     // restart cannot inherit a half-finished exploration from the last run.
-    state.stack = vec![Frame::Story {
-        scene: start,
-        step: 0,
-    }];
-    state.current = start.scene();
-    state.flags.clear();
-    state.items.clear();
+    *state = StoryState::new(start);
     *stage = Stage::default();
     *line = CurrentLine::default();
     choices.items.clear();

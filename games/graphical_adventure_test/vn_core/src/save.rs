@@ -183,7 +183,7 @@ pub fn capture<S: GameScript>(state: &StoryState<S>, music: Option<String>) -> S
     SaveState {
         music,
         stack: state
-            .stack
+            .frames()
             .iter()
             .map(|frame| match frame {
                 Frame::Story { scene, step } => SavedFrame::Story {
@@ -223,23 +223,13 @@ pub fn restore<S: GameScript>(saved: &SaveState) -> Result<StoryState<S>, String
         });
     }
 
-    // `current` is derived, which is exactly why it is not in the file: the
-    // topmost story frame determines it, and a save can never disagree with
-    // itself about what scene is running.
-    let top_story = stack.iter().rev().find_map(|f| match f {
-        Frame::Story { scene, .. } => Some(*scene),
-        Frame::Explore { .. } => None,
-    });
-    let Some(scene) = top_story else {
-        return Err("this save has no story frame at all — it is corrupt".to_string());
-    };
-
-    Ok(StoryState {
-        stack,
-        current: scene.scene(),
-        flags: saved.flags.clone(),
-        items: saved.items.clone(),
-    })
+    // The cached scene is derived, which is exactly why it is not in the file:
+    // the topmost story frame determines it, and a save can never disagree with
+    // itself about what is running. `from_frames` is the single place that
+    // derivation lives — this used to re-implement it, and a second copy of an
+    // invariant is how invariants stop holding.
+    StoryState::from_frames(stack, saved.flags.clone(), saved.items.clone())
+        .ok_or_else(|| "this save has no story frame at all — it is corrupt".to_string())
 }
 
 fn now_secs() -> u64 {
@@ -308,7 +298,7 @@ pub fn save_on_key<S: GameScript>(
     if *app_state.get() == AppState::MainMenu {
         return;
     }
-    let location = match state.stack.last() {
+    let location = match state.top() {
         Some(Frame::Explore { place }) => place.clone(),
         Some(Frame::Story { scene, .. }) => scene.name().to_string(),
         None => "nowhere".to_string(),

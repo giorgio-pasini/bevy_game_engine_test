@@ -11,6 +11,7 @@ and get rewritten freely; this file is what preserves the history behind them.
 
 | Date | Decision | Entry |
 | --- | --- | --- |
+| 2026-08-13 | Presentation asks spawned entities what exists; the retained scene cache is private behind one invariant | [2026-08-13](#2026-08-13) |
 | 2026-08-06 | `GameScript` trait replaces three function pointers — argued on readability, not on churn | [2026-08-06](#2026-08-06) |
 | 2026-08-05 | The frame has one stated order — five system sets, not three unordered chains | [2026-08-05](#2026-08-05) |
 | 2026-08-05 | Saves live in a per-user OS directory, written atomically; the library takes it as a resource | [2026-08-05](#2026-08-05) |
@@ -26,6 +27,48 @@ and get rewritten freely; this file is what preserves the history behind them.
 | 2026-07-30 | Snapshot saves, not `bevy_world_serialization` | [2026-07-30](#2026-07-30) |
 | 2026-07-30 | Cargo workspace over independent projects sharing a target dir | [2026-07-30](#2026-07-30) |
 | 2026-07-30 | Rust toolchain and build cache on D:, not the system drive | [2026-07-30](#2026-07-30) |
+
+---
+
+## 2026-08-13
+
+### Finished the two substantive hardening findings
+
+`AppliedStage` is gone. Background and music entities now carry the path they
+actually display, while character entities already carried their slot and cast
+id. The three reconcilers compare `Stage` against the real entities instead of
+against a second resource describing them. Four headless tests assert that the
+requested background, cast and track are truly spawned, and that an unchanged
+stage does not replace the background or restart the music. The fifth deletes
+both entities behind the reconcilers' backs and proves the unchanged
+authoritative stage recreates them on the next frame — the exact failure the
+old cache could not survive.
+
+`StoryState::current` remains because resolving it on every step clones a full
+scene including prose. The unsafe part was not the cache itself but the public
+stack and five independent sync points. Stack and cache are now private;
+construction, restore and mutation use methods that maintain the invariant, and
+`from_frames` is the only place that derives the cached scene. The restore test
+uses two different story frames with a place between them so an incorrect
+"first story frame" implementation genuinely fails.
+
+### Verification
+
+- `cargo test --workspace --features dev`: 45 tests passed — 29 demo/app/content
+  and documentation tests, 16 `vn_core` tests.
+- `git diff --check`: clean.
+- Five build-script dead-field warnings remain; they predate this slice and are
+  confined to the validator's deserialisation mirror.
+- The design document's stale "no code exists" status and overstated 3D feature
+  saving were corrected after the code was verified.
+
+### Next sensible probe
+
+After runtime play validation, build a tiny second game consuming `vn_core`
+before doing more internal API cleanup. One consumer can only prove that the
+engine serves itself; a deliberately small second consumer will expose the real
+library boundary and provide evidence for the currently deferred visibility
+work.
 
 ---
 
