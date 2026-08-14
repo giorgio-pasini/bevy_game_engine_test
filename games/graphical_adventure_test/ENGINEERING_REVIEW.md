@@ -215,6 +215,12 @@ add a stage effect to `advance` alone and confirm the test goes red.
 
 ### B3. The `dev` feature is copied across three manifests
 
+> **Resolved 2026-08-14.** `[workspace.metadata.dev-feature-contract]` now owns
+> the shared Bevy flags. `demo_game/build.rs` reads the workspace member list,
+> checks all four manifests for an exact Bevy match, and also requires every
+> `vn_core` consumer to forward `vn_core/dev`. The normal workspace build is the
+> enforcement point; no engine feature was changed.
+
 **What.** `dev = ["bevy/dynamic_linking", "bevy/dev", "bevy/track_location"]`
 appears in `snake/Cargo.toml`, `vn_core/Cargo.toml` and `demo_game/Cargo.toml`
 (the last also forwarding `vn_core/dev`), with a comment asking that they stay
@@ -240,11 +246,13 @@ natural to live, since only crates with build scripts run code at build time.
 
 ### B4. Everything in `vn_core` is public
 
-> **Deferral trigger reached 2026-08-14.** `reuse_probe` is now a genuine second
-> consumer. Its first integration finding was that Bevy and `vn_core` both
-> export `Scene` from their preludes, requiring an explicit alias. Audit what
-> both consumers actually import before narrowing visibility; do not fold that
-> API change into the probe that supplies the evidence.
+> **Resolved 2026-08-14.** The audit used `demo_game`, `reuse_probe` and their
+> real app tests as evidence. Plugin registration systems, transient resources,
+> UI-only markers and the letterbox module are now crate-private. The prelude is
+> explicit instead of five module globs; it exports the story type as `VnScene`
+> so it can coexist with Bevy's `Scene`. Model/save types, extension system sets,
+> sampling helpers and components intentionally queried by consumers remain
+> public. All 49 tests pass through the resulting boundary.
 
 **What.** Every system, component and helper in the library is `pub`, including
 things only `VnPlugin` ever registers.
@@ -262,9 +270,9 @@ the model types, components a game may query, and the plugin itself public.
 reaches into `vn_core::present` deliberately, and would need those items kept
 public with a note saying why.
 
-**Recommendation: defer.** With exactly one consumer this is speculative, and
-the project's own over-engineering rule says to wait until a second game asks for
-it. Recorded so the decision is deliberate rather than forgotten.
+**Resolution.** The second consumer supplied the missing evidence. Narrowing
+stopped at items used by either game or by external app-level verification;
+there was no attempt to hide public model types merely to minimise the count.
 
 ---
 
@@ -497,5 +505,5 @@ Grouped so each stage is independently valuable and independently abandonable.
 | ~~2~~ | ~~B1, B2, A3, C2~~ — **done 2026-08-06** | Cheap, no-risk, no design decisions. Removed the litter, closed the highest-value test gap, and wrote down the mapgen expiry. |
 | 3 | Colours, C1 | Two contained simplifications with a decision each — palette location, and whether the load hop is worth its resource. |
 | ~~4~~ | ~~A1, A2~~ — **done 2026-08-13** | `AppliedStage` was removed; the scene cache was encapsulated behind the stack invariant. Screen-level and restore tests cover both. |
-| 5 | B3, C4 | Structural tidying with no behavioural effect. |
-| next | B4 | The second consumer now exists. Audit its imports together with `demo_game`; narrow only the surface neither consumer needs. |
+| ~~5~~ | ~~B3~~ — **done 2026-08-14**, C4 remains optional | The shared `dev` contract is now enforced from workspace metadata. |
+| ~~next~~ | ~~B4~~ — **done 2026-08-14** | Two consumers defined the curated public boundary and removed the `Scene` prelude collision. |

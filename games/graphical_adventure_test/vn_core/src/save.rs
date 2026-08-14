@@ -159,20 +159,20 @@ pub struct LoadRequest(pub Option<u8>);
 
 /// A save file read from disk and waiting to be installed.
 #[derive(Resource, Default)]
-pub struct PendingLoad(pub Option<SaveState>);
+pub(crate) struct PendingLoad(pub Option<SaveState>);
 
 /// A short message to the player: "saved", or why not.
 ///
 /// Without feedback there is no way to tell a keypress worked, and a save that
 /// silently failed is worse than one that never happened.
 #[derive(Resource, Default)]
-pub struct Toast {
+pub(crate) struct Toast {
     pub text: String,
     pub seconds_left: f32,
 }
 
 impl Toast {
-    pub fn show(&mut self, text: impl Into<String>) {
+    pub(crate) fn show(&mut self, text: impl Into<String>) {
         self.text = text.into();
         self.seconds_left = 2.0;
     }
@@ -283,7 +283,7 @@ pub fn read_slot(slots: &SaveSlots, slot: u8) -> Result<SaveFile, String> {
 }
 
 /// F5 saves to slot 1.
-pub fn save_on_key<S: GameScript>(
+pub(crate) fn save_on_key<S: GameScript>(
     keys: Res<ButtonInput<KeyCode>>,
     app_state: Res<State<AppState>>,
     state: Res<StoryState<S>>,
@@ -314,14 +314,17 @@ pub fn save_on_key<S: GameScript>(
 }
 
 /// F9 asks for slot 1. Reading it is somebody else's job.
-pub fn request_load_on_key(keys: Res<ButtonInput<KeyCode>>, mut request: ResMut<LoadRequest>) {
+pub(crate) fn request_load_on_key(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut request: ResMut<LoadRequest>,
+) {
     if keys.just_pressed(KeyCode::F9) {
         request.0 = Some(1);
     }
 }
 
 /// Turns a request into state, or into a message saying why not.
-pub fn read_requested_save(
+pub(crate) fn read_requested_save(
     mut request: ResMut<LoadRequest>,
     slots: Res<SaveSlots>,
     mut pending: ResMut<PendingLoad>,
@@ -339,7 +342,7 @@ pub fn read_requested_save(
     }
 }
 
-pub fn tick_toast(time: Res<Time>, mut toast: ResMut<Toast>) {
+pub(crate) fn tick_toast(time: Res<Time>, mut toast: ResMut<Toast>) {
     if toast.seconds_left > 0.0 {
         toast.seconds_left -= time.delta_secs();
         if toast.seconds_left <= 0.0 {

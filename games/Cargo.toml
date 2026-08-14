@@ -23,6 +23,13 @@ members = [
   "graphical_adventure_test/reuse_probe",
 ]
 
+# One source of truth for the Bevy-facing part of every member's `dev`
+# feature. `demo_game/build.rs` validates all workspace members against this
+# list before compiling content, so a new consumer cannot quietly create a
+# second, expensive Bevy artifact graph.
+[workspace.metadata.dev-feature-contract]
+bevy = ["bevy/dynamic_linking", "bevy/dev", "bevy/track_location"]
+
 # Declare shared dependencies here and have every member use
 # `bevy = { workspace = true }`. This is not cosmetic — it is what keeps artifact
 # reuse working.

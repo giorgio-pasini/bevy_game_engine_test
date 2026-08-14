@@ -356,6 +356,11 @@ is a bug report about the design.
 > build-dependency on `toml` made that five lines, and build-dependency features
 > are resolved separately, so it cost no engine rebuild.
 
+The same rule applies across manifests. Put a shared feature contract in
+workspace metadata, enumerate `workspace.members`, and have the normal workspace
+build reject members that drift. This keeps the declarations where Cargo needs
+them while moving the *fact they must agree on* to one source of truth.
+
 Two cautions when deriving:
 
 - **Check what the source of truth actually says.** Deriving only from the
@@ -534,9 +539,14 @@ content while asking for no new feature.
 Small is what makes the evidence readable: every workaround belongs to the API
 rather than to content complexity. A three-scene consumer of `vn_core` exposed
 an ambiguous `Scene` name exported by both Bevy's and the library's preludes on
-its first compile. The original game hid it through its module structure. One
-explicit alias was enough; the important output was knowing where the public
-contract rubs against a normal Bevy application.
+its first compile. The original game hid it through its module structure.
+
+Once that evidence exists, audit both consumers before changing visibility.
+Prefer an explicit, curated prelude over module globs: export collision-prone
+types under domain-specific names (`VnScene` here), keep their direct module
+paths available, and make plugin-only systems and transient resources
+crate-private. The goal is a boundary a normal application can import cleanly,
+not the smallest possible public-item count.
 
 Do not refactor the API in the same step that creates the evidence. Land the
 probe, list what both consumers use, then narrow from facts.

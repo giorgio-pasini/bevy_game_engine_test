@@ -76,7 +76,7 @@ pub fn sample_design_point(image: &Image, x: f32, y: f32) -> Option<Rgb> {
 }
 
 /// Loads (or drops) the lookup image when the place changes.
-pub fn sync_lookup<S: GameScript>(
+pub(crate) fn sync_lookup<S: GameScript>(
     state: Res<StoryState<S>>,
     places: Res<Places>,
     assets: Res<AssetServer>,
@@ -98,7 +98,7 @@ pub fn sync_lookup<S: GameScript>(
 
 /// Resolves what the cursor is pointing at. The only writer of
 /// [`HoveredHotspot`].
-pub fn hover_hotspot<S: GameScript>(
+pub(crate) fn hover_hotspot<S: GameScript>(
     state: Res<StoryState<S>>,
     places: Res<Places>,
     lookup: Res<MapLookup>,
@@ -149,7 +149,7 @@ pub fn hover_hotspot<S: GameScript>(
 
 /// Turns a click on a region into a picked option — the same currency a button
 /// press produces, so both end up in one place that applies the effect.
-pub fn click_hotspot(
+pub(crate) fn click_hotspot(
     mouse: Res<ButtonInput<MouseButton>>,
     hovered: Res<HoveredHotspot>,
     mut picked: ResMut<PickedOption>,

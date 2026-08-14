@@ -163,7 +163,10 @@ fixtures could expose the collision.
 
 **Instead:** build the smallest independent consumer before declaring the API
 settled. Keep its content trivial, record every workaround, and only then audit
-visibility and naming from what both consumers actually use.
+visibility and naming from what both consumers actually use. Replace globbed
+preludes with an explicit consumer surface, give collision-prone exports a
+domain name, and hide plugin-registration internals only after the consumers
+prove they do not need them.
 
 ---
 

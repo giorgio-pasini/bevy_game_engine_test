@@ -9,9 +9,6 @@ use bevy::prelude::*;
 use bevy::window::WindowResolution;
 use std::collections::BTreeMap;
 use vn_core::prelude::*;
-// Both preludes export `Scene`: Bevy's trait and vn_core's story struct. A real
-// second consumer exposed the collision, so name the story type explicitly.
-use vn_core::story::Scene as VnScene;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum SceneId {

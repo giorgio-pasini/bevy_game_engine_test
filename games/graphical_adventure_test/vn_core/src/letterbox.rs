@@ -15,7 +15,7 @@ use crate::present::{DESIGN_H, DESIGN_W};
 
 const ASPECT: f32 = DESIGN_W / DESIGN_H;
 
-pub fn spawn_camera(mut commands: Commands) {
+pub(crate) fn spawn_camera(mut commands: Commands) {
     commands.spawn((
         Camera2d,
         Projection::from(OrthographicProjection {
@@ -29,7 +29,7 @@ pub fn spawn_camera(mut commands: Commands) {
 
 /// Recomputes the letterbox rectangle. Cheap enough to run every frame, which
 /// avoids having to catch every resize event.
-pub fn fit_letterbox(windows: Query<&Window>, mut cameras: Query<&mut Camera>) {
+pub(crate) fn fit_letterbox(windows: Query<&Window>, mut cameras: Query<&mut Camera>) {
     let Ok(window) = windows.single() else {
         return;
     };

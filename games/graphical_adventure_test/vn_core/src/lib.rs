@@ -7,7 +7,7 @@
 
 use bevy::prelude::*;
 
-pub mod letterbox;
+mod letterbox;
 pub mod map;
 pub mod place;
 pub mod present;
@@ -18,12 +18,19 @@ pub mod story;
 mod tests;
 
 pub mod prelude {
-    pub use crate::letterbox::*;
-    pub use crate::map::*;
-    pub use crate::place::*;
+    pub use crate::map::{HoveredHotspot, MapLookup, sample_design_point};
+    pub use crate::place::{Effect, Place, PlaceOption, Places, Rgb};
     pub use crate::present::{DESIGN_H, DESIGN_W};
-    pub use crate::save::*;
-    pub use crate::story::*;
+    pub use crate::save::{
+        LoadRequest, SAVE_VERSION, SaveFile, SaveSlots, SaveState, SavedFrame, capture,
+        read_slot, restore, write_slot,
+    };
+    pub use crate::story::{
+        AppState, Cast, CastMember, Choice, Condition, CurrentLine, Flow, Frame, GameScript,
+        Locale, PendingChoices, PlayMode, Presentation, RawChoice, RawScene, RawStep,
+        Scene as VnScene, Slot, Stage, Step, StoryState, TextKey, advance, take_choice,
+        take_option,
+    };
     pub use crate::{VnPlugin, VnSet};
 }
 

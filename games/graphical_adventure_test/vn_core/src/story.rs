@@ -222,7 +222,7 @@ impl Condition {
 /// copies were identical, which is exactly why they would not have stayed that
 /// way: a filter that offers an option and a re-check that accepts the click
 /// must agree, and agreement by inspection is not agreement.
-pub fn allowed(
+pub(crate) fn allowed(
     condition: &Option<Condition>,
     flags: &BTreeMap<String, i32>,
     items: &BTreeSet<String>,
@@ -368,7 +368,7 @@ pub struct Scene<S> {
 /// game may want to choose it — chapter select, a debug entry point — and only
 /// `reset` reads it, so it costs one system a parameter rather than seven.
 #[derive(Resource)]
-pub struct StartScene<S: GameScript>(pub S);
+pub(crate) struct StartScene<S: GameScript>(pub S);
 
 /// Resolves a text key for the active language.
 #[derive(Resource)]
@@ -643,7 +643,7 @@ pub enum PlayMode {
 /// screen down on their own. That is the purity rule paying off: there is no
 /// "unload the background, stop the music, despawn the cast" teardown to write
 /// or to forget.
-pub fn reset<S: GameScript>(
+pub(crate) fn reset<S: GameScript>(
     state: &mut StoryState<S>,
     start: S,
     stage: &mut Stage,

@@ -15,15 +15,22 @@ beyond its original demo.
   with no new engine features. Its real plugin test is independent of
   `demo_game`, both branches terminate in the model, and the native binary
   starts with all three asset types.
-- **Public API audit — next.** Narrow `vn_core` visibility
-  using the two real consumers as evidence. Do not guess this boundary before
-  the probe exists.
-- **Feature-set drift guard.** Validate the effective `dev` feature contract for
-  every workspace member so adding a consumer cannot silently create a second
-  expensive Bevy build configuration.
-- **Manual regression route.** Keep one short played route covering menu,
-  dialogue, exploration, hotspot, return, save and load. Automation remains the
-  first line; a real launch remains the final one.
+- **Public API audit — done 2026-08-14.** The two consumers now define a curated
+  prelude; plugin-only systems and resources are crate-private. The story type
+  is exported as `VnScene`, avoiding Bevy's own `Scene` prelude name while the
+  direct `vn_core::story::Scene` path remains available.
+- **Feature-set drift guard — done 2026-08-14.** The workspace manifest owns one
+  Bevy `dev` contract. `demo_game/build.rs` checks every member against it and
+  requires consumers to forward `vn_core/dev`.
+- **Manual regression route — awaiting observation.** In `demo_game`, start a
+  new game, confirm background/cast/music, advance to **Look around the ridge
+  first**, enter **Look out over the valley**, hover and click a labelled map
+  hotspot, return to the ridge, save with F5, move elsewhere, load with F9 and
+  confirm the saved place returns, then leave via **Go on over the peaks**. In
+  `reuse_probe`, confirm its own background/guide/music, then play both
+  **Follow the lantern** and **Follow the river**; the river route must hide the
+  guide before its final narration. Automation remains the first line; a real
+  launch remains the final one.
 
 Splitting the large `demo_game/build.rs`, simplifying the two-hop load request,
 and centralising presentation colours are engineering cleanup, not gates. Take

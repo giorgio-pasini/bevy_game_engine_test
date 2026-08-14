@@ -11,6 +11,7 @@ and get rewritten freely; this file is what preserves the history behind them.
 
 | Date | Decision | Entry |
 | --- | --- | --- |
+| 2026-08-14 | Two consumers define a curated prelude; workspace metadata defines the shared development feature contract | [2026-08-14](#2026-08-14) |
 | 2026-08-14 | A tiny second consumer proves the reusable boundary before public-API cleanup | [2026-08-14](#2026-08-14) |
 | 2026-08-13 | Presentation asks spawned entities what exists; the retained scene cache is private behind one invariant | [2026-08-13](#2026-08-13) |
 | 2026-08-06 | `GameScript` trait replaces three function pointers — argued on readability, not on churn | [2026-08-06](#2026-08-06) |
@@ -71,6 +72,26 @@ a done condition: persistent profile/seen decisions, history, auto/skip,
 settings, transitions, audio completion, localisation, gallery/achievements,
 save UX/migrations and measured asset preloading. `DESIGN.md` remains the
 historical reasoning; the backlog is authoritative for what is still wanted.
+
+### The second consumer now defines the public boundary
+
+Audited imports and app-level queries in both `demo_game` and `reuse_probe`.
+`vn_core::prelude` now names its exports explicitly instead of glob-exporting
+five modules, and exposes the narrative type as `VnScene`; the direct
+`vn_core::story::Scene` path remains public. This removes the collision with
+Bevy's prelude without renaming the model itself. Systems registered only by
+`VnPlugin`, transient load/toast resources, UI-only markers and the letterbox
+module became crate-private. Public model and save types, `VnSet`, map sampling
+helpers, and components queried by consumer tests stayed public because the two
+games supplied evidence for them.
+
+The workspace manifest now also carries one `dev` feature contract. The demo's
+existing build script enumerates all workspace members, rejects any different
+set of `bevy/...` development flags, and requires crates depending on `vn_core`
+to forward `vn_core/dev`. This deliberately accepts the documented layering
+oddity in exchange for making a costly feature drift fail the normal workspace
+build. No Bevy feature changed. Focused serial runs passed all 49 tests after an
+initial parallel attempt exhausted memory while native games were also running.
 
 ---
 

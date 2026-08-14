@@ -46,19 +46,19 @@ pub struct CharacterSprite {
 // editing Rust.
 
 #[derive(Component)]
-pub struct SpeakerText;
+pub(crate) struct SpeakerText;
 
 #[derive(Component)]
-pub struct BodyText;
+pub(crate) struct BodyText;
 
 #[derive(Component)]
-pub struct ContinueHint;
+pub(crate) struct ContinueHint;
 
 #[derive(Component)]
-pub struct ChoiceRoot;
+pub(crate) struct ChoiceRoot;
 
 #[derive(Component)]
-pub struct ChoiceButton(pub usize);
+pub(crate) struct ChoiceButton(pub usize);
 
 /// The playing track, carrying **which track it is**. See [`BackgroundSprite`].
 #[derive(Component)]
@@ -67,7 +67,7 @@ pub struct MusicPlayer(pub String);
 /// A non-story button. Story choices use [`ChoiceButton`] instead, because they
 /// carry an index into the current branch rather than a fixed action.
 #[derive(Component, Clone, Copy, PartialEq, Eq)]
-pub enum UiButton {
+pub(crate) enum UiButton {
     StartStory,
     /// Resume from slot 1. Only offered when that file exists.
     Continue,
@@ -100,7 +100,7 @@ fn menu_button(action: UiButton, label: &str) -> impl Bundle + use<> {
     )
 }
 
-pub fn spawn_menu(mut commands: Commands, locale: Res<Locale>, slots: Res<SaveSlots>) {
+pub(crate) fn spawn_menu(mut commands: Commands, locale: Res<Locale>, slots: Res<SaveSlots>) {
     // Asked of the filesystem each time the menu opens rather than remembered:
     // the player may have saved since it was last built.
     let has_save = slots.exists(1);
@@ -146,11 +146,11 @@ pub fn spawn_menu(mut commands: Commands, locale: Res<Locale>, slots: Res<SaveSl
 
 /// Transient feedback: "saved", "loaded", or why not.
 #[derive(Component)]
-pub struct ToastText;
+pub(crate) struct ToastText;
 
 /// Spawned once and never torn down — it has to be able to speak in every state,
 /// including the menu, and it says nothing when there is nothing to say.
-pub fn spawn_toast(mut commands: Commands) {
+pub(crate) fn spawn_toast(mut commands: Commands) {
     commands.spawn((
         Node {
             position_type: PositionType::Absolute,
@@ -169,7 +169,7 @@ pub fn spawn_toast(mut commands: Commands) {
     ));
 }
 
-pub fn draw_toast(toast: Res<Toast>, mut text: Query<&mut Text, With<ToastText>>) {
+pub(crate) fn draw_toast(toast: Res<Toast>, mut text: Query<&mut Text, With<ToastText>>) {
     let Ok(mut text) = text.single_mut() else {
         return;
     };
@@ -179,7 +179,7 @@ pub fn draw_toast(toast: Res<Toast>, mut text: Query<&mut Text, With<ToastText>>
 }
 
 /// Shown when the story reaches `Step::End`.
-pub fn spawn_end_screen(mut commands: Commands, locale: Res<Locale>) {
+pub(crate) fn spawn_end_screen(mut commands: Commands, locale: Res<Locale>) {
     commands.spawn((
         DespawnOnExit(PlayMode::Finished),
         Node {
@@ -199,7 +199,7 @@ pub fn spawn_end_screen(mut commands: Commands, locale: Res<Locale>) {
 }
 
 /// Spawned on entering `Playing` and torn down automatically on leaving it.
-pub fn spawn_ui(mut commands: Commands) {
+pub(crate) fn spawn_ui(mut commands: Commands) {
     // Dialogue box, pinned to the bottom of the design area.
     commands.spawn((
         DespawnOnExit(AppState::Playing),
@@ -260,7 +260,7 @@ pub fn spawn_ui(mut commands: Commands) {
 ///
 /// `FillCenter` is what implements the "square art in a 16:9 frame" decision —
 /// it scales to cover and centre-crops rather than distorting.
-pub fn sync_background(
+pub(crate) fn sync_background(
     mut commands: Commands,
     stage: Res<Stage>,
     assets: Res<AssetServer>,
@@ -290,7 +290,7 @@ pub fn sync_background(
     }
 }
 
-pub fn sync_characters(
+pub(crate) fn sync_characters(
     mut commands: Commands,
     stage: Res<Stage>,
     cast: Res<Cast>,
@@ -342,7 +342,7 @@ pub fn sync_characters(
 /// Deriving this from the loaded texture rather than hand-authoring it means
 /// replacing art of a different shape needs no code or data change. Runs until
 /// the texture is available, then leaves the sprite alone.
-pub fn fit_characters(
+pub(crate) fn fit_characters(
     images: Res<Assets<Image>>,
     cast: Res<Cast>,
     tuning: Res<Presentation>,
@@ -382,7 +382,7 @@ fn baseline(tuning: &Presentation) -> f32 {
 ///
 /// Eased rather than snapped, so it reads as attention shifting rather than a
 /// flicker. This is the only system that writes character tint or scale.
-pub fn speaker_cue(
+pub(crate) fn speaker_cue(
     time: Res<Time>,
     line: Res<CurrentLine>,
     tuning: Res<Presentation>,
@@ -418,7 +418,7 @@ pub fn speaker_cue(
     }
 }
 
-pub fn sync_music(
+pub(crate) fn sync_music(
     mut commands: Commands,
     stage: Res<Stage>,
     assets: Res<AssetServer>,
@@ -446,7 +446,7 @@ pub fn sync_music(
 
 /// Typewriter. Reveals by *count*, never by mutating the source string — so
 /// "skip to full line" and the backlog stay trivial.
-pub fn reveal_text(
+pub(crate) fn reveal_text(
     time: Res<Time>,
     tuning: Res<Presentation>,
     mut line: ResMut<CurrentLine>,
@@ -467,7 +467,7 @@ pub fn reveal_text(
     }
 }
 
-pub fn draw_dialogue(
+pub(crate) fn draw_dialogue(
     line: Res<CurrentLine>,
     cast: Res<Cast>,
     mode: Res<State<PlayMode>>,
@@ -495,7 +495,7 @@ pub fn draw_dialogue(
     }
 }
 
-pub fn spawn_choices(mut commands: Commands, choices: Res<PendingChoices>) {
+pub(crate) fn spawn_choices(mut commands: Commands, choices: Res<PendingChoices>) {
     if choices.items.is_empty() {
         return;
     }
@@ -555,7 +555,7 @@ pub struct PlaceOptionButton(pub usize);
 /// background and no options. Asking the world what exists cannot desync;
 /// remembering what you spawned can.
 #[derive(Component)]
-pub struct ExploreRoot(pub String);
+pub(crate) struct ExploreRoot(pub String);
 
 /// Names whatever region the cursor is over, on a map place.
 ///
@@ -570,7 +570,7 @@ pub struct HotspotLabel;
 /// Backgrounds and music are not touched here — the place's own values are
 /// pushed into `Stage`, and the same reconcilers that serve the narrative phase
 /// render them. Exploration is a different UI, not a different renderer.
-pub fn spawn_place_view<S: GameScript>(
+pub(crate) fn spawn_place_view<S: GameScript>(
     mut commands: Commands,
     state: Res<StoryState<S>>,
     places: Res<Places>,
@@ -684,7 +684,7 @@ pub fn spawn_place_view<S: GameScript>(
 /// Two situations need this, and `OnEnter(Exploring)` catches neither reliably:
 /// moving between rooms keeps the same `AppState`, and returning from a called
 /// scene destroys the UI without changing the place.
-pub fn refresh_place_view<S: GameScript>(
+pub(crate) fn refresh_place_view<S: GameScript>(
     mut commands: Commands,
     state: Res<StoryState<S>>,
     places: Res<Places>,
@@ -706,7 +706,7 @@ pub fn refresh_place_view<S: GameScript>(
 }
 
 /// Names the region under the cursor. The only writer of that text node.
-pub fn draw_hotspot_label<S: GameScript>(
+pub(crate) fn draw_hotspot_label<S: GameScript>(
     state: Res<StoryState<S>>,
     places: Res<Places>,
     hovered: Res<HoveredHotspot>,
@@ -732,7 +732,7 @@ pub fn draw_hotspot_label<S: GameScript>(
 
 /// A pressed option button, expressed as a picked option. Deliberately does not
 /// apply anything — see [`PickedOption`].
-pub fn pick_place_button(
+pub(crate) fn pick_place_button(
     buttons: Query<(&Interaction, &PlaceOptionButton), Changed<Interaction>>,
     mut picked: ResMut<PickedOption>,
 ) {
@@ -744,7 +744,7 @@ pub fn pick_place_button(
     }
 }
 
-pub fn highlight_choices(
+pub(crate) fn highlight_choices(
     mut buttons: Query<(&Interaction, &mut BackgroundColor), (Changed<Interaction>, With<Button>)>,
 ) {
     for (interaction, mut colour) in &mut buttons {
@@ -757,7 +757,7 @@ pub fn highlight_choices(
     }
 }
 
-pub fn despawn_choices(mut commands: Commands, roots: Query<Entity, With<ChoiceRoot>>) {
+pub(crate) fn despawn_choices(mut commands: Commands, roots: Query<Entity, With<ChoiceRoot>>) {
     for e in &roots {
         commands.entity(e).despawn();
     }

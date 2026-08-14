@@ -253,6 +253,95 @@ fn derive_decodable(manifest_dir: &Path) -> BTreeSet<String> {
     out
 }
 
+/// Ensures every workspace member builds Bevy with the same diagnostic
+/// features in development. A one-line drift here creates a second copy of the
+/// whole engine graph in the shared target directory, so it is a build error
+/// rather than a convention people have to remember.
+fn validate_dev_feature_contract(manifest_dir: &Path) {
+    let workspace_root = manifest_dir.join("../..");
+    let workspace_manifest = workspace_root.join("Cargo.toml");
+    let text = std::fs::read_to_string(&workspace_manifest).unwrap_or_else(|e| {
+        fail(&format!(
+            "cannot read workspace manifest {}: {e}",
+            workspace_manifest.display()
+        ))
+    });
+    let doc: toml::Value = toml::from_str(&text).unwrap_or_else(|e| {
+        fail(&format!("{}: not valid TOML: {e}", workspace_manifest.display()))
+    });
+
+    let strings = |value: Option<&toml::Value>, where_: &str| -> BTreeSet<String> {
+        value
+            .and_then(toml::Value::as_array)
+            .unwrap_or_else(|| fail(&format!("{where_}: expected an array of strings")))
+            .iter()
+            .map(|item| {
+                item.as_str()
+                    .unwrap_or_else(|| fail(&format!("{where_}: expected an array of strings")))
+                    .to_string()
+            })
+            .collect()
+    };
+
+    let contract_where = "workspace.metadata.dev-feature-contract.bevy";
+    let contract = strings(
+        doc.get("workspace")
+            .and_then(|v| v.get("metadata"))
+            .and_then(|v| v.get("dev-feature-contract"))
+            .and_then(|v| v.get("bevy")),
+        contract_where,
+    );
+    if contract.is_empty() || contract.iter().any(|f| !f.starts_with("bevy/")) {
+        fail(&format!(
+            "{contract_where}: must contain the shared `bevy/...` development features"
+        ));
+    }
+
+    let members = doc
+        .get("workspace")
+        .and_then(|v| v.get("members"))
+        .and_then(toml::Value::as_array)
+        .unwrap_or_else(|| fail("workspace.members: expected an array of member paths"));
+
+    for member in members {
+        let member = member
+            .as_str()
+            .unwrap_or_else(|| fail("workspace.members: expected an array of member paths"));
+        let path = workspace_root.join(member).join("Cargo.toml");
+        println!("cargo::rerun-if-changed={}", path.display());
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| fail(&format!("cannot read member manifest {}: {e}", path.display())));
+        let member_doc: toml::Value = toml::from_str(&text)
+            .unwrap_or_else(|e| fail(&format!("{}: not valid TOML: {e}", path.display())));
+        let dev_where = format!("{}: features.dev", path.display());
+        let dev = strings(
+            member_doc.get("features").and_then(|v| v.get("dev")),
+            &dev_where,
+        );
+        let bevy: BTreeSet<String> = dev
+            .iter()
+            .filter(|f| f.starts_with("bevy/"))
+            .cloned()
+            .collect();
+        if bevy != contract {
+            fail(&format!(
+                "{dev_where}: Bevy feature drift; expected {contract:?}, found {bevy:?}"
+            ));
+        }
+
+        let depends_on_vn_core = member_doc
+            .get("dependencies")
+            .and_then(|v| v.get("vn_core"))
+            .is_some();
+        let forwards_vn_core = dev.contains("vn_core/dev");
+        if depends_on_vn_core != forwards_vn_core {
+            fail(&format!(
+                "{dev_where}: members depending on `vn_core` must forward `vn_core/dev`, and other members must not"
+            ));
+        }
+    }
+}
+
 #[derive(serde::Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[allow(dead_code)]
 enum Slot {
@@ -272,6 +361,8 @@ fn main() {
     // ...and whenever the engine's feature set changes, since that is what
     // decides which assets can be decoded at all.
     println!("cargo::rerun-if-changed=../../Cargo.toml");
+
+    validate_dev_feature_contract(&manifest);
 
     DECODABLE
         .set(derive_decodable(&manifest))

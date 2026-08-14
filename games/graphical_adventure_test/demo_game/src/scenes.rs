@@ -52,7 +52,7 @@ pub fn places() -> Places {
 /// resources: the engine now writes `id.scene()` where it used to write
 /// `(script.scene_of)(id)`, and "go to definition" lands here.
 impl GameScript for SceneId {
-    fn scene(self) -> Scene<SceneId> {
+    fn scene(self) -> VnScene<SceneId> {
         content(self)
     }
 
@@ -84,8 +84,8 @@ pub const MISSING: &str = "<missing text>";
 
 /// Parsed once on first use. The scene files are a few KB, so this needs no
 /// loading state and no async.
-fn cache() -> &'static BTreeMap<SceneId, Scene<SceneId>> {
-    static CACHE: OnceLock<BTreeMap<SceneId, Scene<SceneId>>> = OnceLock::new();
+fn cache() -> &'static BTreeMap<SceneId, VnScene<SceneId>> {
+    static CACHE: OnceLock<BTreeMap<SceneId, VnScene<SceneId>>> = OnceLock::new();
     CACHE.get_or_init(|| {
         let mut map = BTreeMap::new();
         for id in SceneId::ALL {
@@ -103,7 +103,7 @@ fn cache() -> &'static BTreeMap<SceneId, Scene<SceneId>> {
     })
 }
 
-pub fn content(id: SceneId) -> Scene<SceneId> {
+pub fn content(id: SceneId) -> VnScene<SceneId> {
     cache()
         .get(&id)
         .unwrap_or_else(|| panic!("scene `{}` missing from cache", id.stem()))
