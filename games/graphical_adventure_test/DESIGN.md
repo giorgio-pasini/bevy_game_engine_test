@@ -89,6 +89,7 @@ milestones that each run on their own.
 games/graphical_adventure_test/
   vn_core/      # library crate: the engine, as Bevy plugins
   demo_game/    # binary crate: a short story that consumes vn_core
+  reuse_probe/  # minimal second consumer; proves the public contract is real
 ```
 
 The alternative — one copyable project per game — was rejected because
@@ -865,6 +866,11 @@ keeps `3d` enabled because a 3D probe is planned and toggling engine features is
 the expensive operation.
 
 ## Part 8b — Backlog
+
+> **MOVED 2026-08-14.** Deferred features now live in `BACKLOG.md`, with
+> dependencies, triggers and done conditions. This section is retained as the
+> historical record of the exploration roadmap and the first seen-choice
+> design; `BACKLOG.md` is authoritative for what remains.
 
 Wanted, not yet built. Recorded here rather than left in conversation.
 

@@ -523,6 +523,24 @@ behaviour, and the game's assert *its own content*.
 > Moving the pure logic into the library produced 15 unit tests that need no
 > assets, no app and no window, and run in hundredths of a second.
 
+### Prove a reusable API with a deliberately tiny second consumer
+`[architecture]` `[testing]` `[ai-workflow]` — **measured**
+
+One consumer proves that a library can serve the application it grew inside.
+It does not prove the boundary is reusable. Before polishing or narrowing that
+API, add the smallest independent consumer that supplies its own types and
+content while asking for no new feature.
+
+Small is what makes the evidence readable: every workaround belongs to the API
+rather than to content complexity. A three-scene consumer of `vn_core` exposed
+an ambiguous `Scene` name exported by both Bevy's and the library's preludes on
+its first compile. The original game hid it through its module structure. One
+explicit alias was enough; the important output was knowing where the public
+contract rubs against a normal Bevy application.
+
+Do not refactor the API in the same step that creates the evidence. Land the
+probe, list what both consumers use, then narrow from facts.
+
 ### Drive input as messages, not by writing to `ButtonInput`
 `[bevy]` `[testing]` — **confirmed**, Bevy 0.19.0
 

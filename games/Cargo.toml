@@ -20,6 +20,7 @@ members = [
   "snake",
   "graphical_adventure_test/vn_core",
   "graphical_adventure_test/demo_game",
+  "graphical_adventure_test/reuse_probe",
 ]
 
 # Declare shared dependencies here and have every member use

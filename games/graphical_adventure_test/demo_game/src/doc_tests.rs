@@ -28,6 +28,7 @@ fn documents() -> Vec<PathBuf> {
         root.join("CLAUDE.md"),
         root.join("games/snake/CLAUDE.md"),
         root.join("games/graphical_adventure_test/DESIGN.md"),
+        root.join("games/graphical_adventure_test/BACKLOG.md"),
         // A review is worth checking like any other document: it cites more
         // paths than most, and a finding that names a file which has since moved
         // is a finding nobody can act on.

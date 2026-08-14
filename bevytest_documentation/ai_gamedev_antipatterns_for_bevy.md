@@ -145,6 +145,28 @@ observers is stable and sufficient.
 
 ---
 
+## Calling a library reusable after testing only its original application
+
+**What it looks like:** the engine is in its own crate, has generic types and a
+consumer-facing plugin, and the original game plus synthetic library fixtures
+all pass.
+
+**Why it bites:** the application the library grew inside shaped both sides of
+the boundary. Its module layout, imports and content pipeline can hide friction
+that every fresh consumer will meet.
+
+**Evidence:** a three-scene second consumer of `vn_core`, deliberately using no
+new feature, failed on its first compile because Bevy and the library both
+exported `Scene` through their preludes. The original demo's module structure
+made the name unambiguous, so neither its app tests nor the library's synthetic
+fixtures could expose the collision.
+
+**Instead:** build the smallest independent consumer before declaring the API
+settled. Keep its content trivial, record every workaround, and only then audit
+visibility and naming from what both consumers actually use.
+
+---
+
 ## Serialising the world to make save files
 
 **What it looks like:** the engine ships world serialisation

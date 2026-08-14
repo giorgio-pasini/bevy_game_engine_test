@@ -1,0 +1,13 @@
+[package]
+name = "reuse_probe"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy = { workspace = true }
+vn_core = { path = "../vn_core" }
+
+[features]
+# Same Bevy development contract as the other consumers. Forwarding keeps the
+# library and binary on one feature configuration.
+dev = ["bevy/dynamic_linking", "bevy/dev", "bevy/track_location", "vn_core/dev"]

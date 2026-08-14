@@ -11,6 +11,7 @@ and get rewritten freely; this file is what preserves the history behind them.
 
 | Date | Decision | Entry |
 | --- | --- | --- |
+| 2026-08-14 | A tiny second consumer proves the reusable boundary before public-API cleanup | [2026-08-14](#2026-08-14) |
 | 2026-08-13 | Presentation asks spawned entities what exists; the retained scene cache is private behind one invariant | [2026-08-13](#2026-08-13) |
 | 2026-08-06 | `GameScript` trait replaces three function pointers — argued on readability, not on churn | [2026-08-06](#2026-08-06) |
 | 2026-08-05 | The frame has one stated order — five system sets, not three unordered chains | [2026-08-05](#2026-08-05) |
@@ -27,6 +28,49 @@ and get rewritten freely; this file is what preserves the history behind them.
 | 2026-07-30 | Snapshot saves, not `bevy_world_serialization` | [2026-07-30](#2026-07-30) |
 | 2026-07-30 | Cargo workspace over independent projects sharing a target dir | [2026-07-30](#2026-07-30) |
 | 2026-07-30 | Rust toolchain and build cache on D:, not the system drive | [2026-07-30](#2026-07-30) |
+
+---
+
+## 2026-08-14
+
+### The engine has a second consumer
+
+Added `games/graphical_adventure_test/reuse_probe`: three Rust-authored scenes,
+one choice, two endings, no build script, no exploration and no new engine
+feature. It owns one known-decodable asset of each presentation kind — WebP
+background, PNG character and Ogg music — so it asks whether a normal Bevy
+binary can supply `GameScript`, menu text, cast, empty places and presentation
+tuning, then run the existing plugin without depending on demo content.
+
+Four tests cover the consumer rather than the library internals: scene names
+round-trip for saves; all owned assets exist; both choices reach distinct
+endings and the river route applies `Hide`; and the real headless plugin enters
+this game's opening scene with a spawned background, character and music
+player. The workspace now passes 49 tests: 29 demo, 16 `vn_core`, and 4
+reuse-probe tests. The asset-complete binary was also built and stayed alive
+during a bounded native launch with no asset decode or runtime schedule errors;
+visual composition, audible music and clicked ending routes still need human
+observation.
+
+### The probe paid on its first compile
+
+Both Bevy and `vn_core` export `Scene` through their preludes. Importing the two
+natural preludes made `Scene` ambiguous, which the original demo hid through its
+module layout. The consumer now names `vn_core::story::Scene` as `VnScene`.
+
+That is evidence for the upcoming public-API audit, not a reason to redesign the
+library in the same change. `ENGINEERING_REVIEW.md` finding B4 had deliberately
+waited for a second consumer; its trigger is now satisfied. The next pass should
+list what both games import, then narrow or rename only from that evidence.
+
+### Deferred features now have one home
+
+Created `games/graphical_adventure_test/BACKLOG.md`. It separates base
+solidification from player-facing work and gives each feature dependencies and
+a done condition: persistent profile/seen decisions, history, auto/skip,
+settings, transitions, audio completion, localisation, gallery/achievements,
+save UX/migrations and measured asset preloading. `DESIGN.md` remains the
+historical reasoning; the backlog is authoritative for what is still wanted.
 
 ---
 

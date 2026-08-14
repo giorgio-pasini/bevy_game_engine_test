@@ -240,6 +240,12 @@ natural to live, since only crates with build scripts run code at build time.
 
 ### B4. Everything in `vn_core` is public
 
+> **Deferral trigger reached 2026-08-14.** `reuse_probe` is now a genuine second
+> consumer. Its first integration finding was that Bevy and `vn_core` both
+> export `Scene` from their preludes, requiring an explicit alias. Audit what
+> both consumers actually import before narrowing visibility; do not fold that
+> API change into the probe that supplies the evidence.
+
 **What.** Every system, component and helper in the library is `pub`, including
 things only `VnPlugin` ever registers.
 
@@ -492,4 +498,4 @@ Grouped so each stage is independently valuable and independently abandonable.
 | 3 | Colours, C1 | Two contained simplifications with a decision each — palette location, and whether the load hop is worth its resource. |
 | ~~4~~ | ~~A1, A2~~ — **done 2026-08-13** | `AppliedStage` was removed; the scene cache was encapsulated behind the stack invariant. Screen-level and restore tests cover both. |
 | 5 | B3, C4 | Structural tidying with no behavioural effect. |
-| — | B4 | Deliberately deferred: an API boundary drawn before a second consumer exists is a guess, and deferring it costs nothing. |
+| next | B4 | The second consumer now exists. Audit its imports together with `demo_game`; narrow only the surface neither consumer needs. |
