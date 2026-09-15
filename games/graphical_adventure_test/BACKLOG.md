@@ -22,15 +22,16 @@ beyond its original demo.
 - **Feature-set drift guard — done 2026-08-14.** The workspace manifest owns one
   Bevy `dev` contract. `demo_game/build.rs` checks every member against it and
   requires consumers to forward `vn_core/dev`.
-- **Manual regression route — awaiting observation.** In `demo_game`, start a
+- **Manual regression route — passed 2026-08-14.** In `demo_game`, start a
   new game, confirm background/cast/music, advance to **Look around the ridge
   first**, enter **Look out over the valley**, hover and click a labelled map
   hotspot, return to the ridge, save with F5, move elsewhere, load with F9 and
   confirm the saved place returns, then leave via **Go on over the peaks**. In
   `reuse_probe`, confirm its own background/guide/music, then play both
   **Follow the lantern** and **Follow the river**; the river route must hide the
-  guide before its final narration. Automation remains the first line; a real
-  launch remains the final one.
+  guide before its final narration. The complete route was observed successfully;
+  images, characters and music were present in both games. Automation remains
+  the first line; a real launch remains the final one.
 
 Splitting the large `demo_game/build.rs`, simplifying the two-hop load request,
 and centralising presentation colours are engineering cleanup, not gates. Take
@@ -38,7 +39,7 @@ them only when they obstruct feature work.
 
 ## Player-facing backlog
 
-### 1. Persistent player profile and seen decisions
+### 1. Persistent player profile and seen decisions — done 2026-08-16
 
 The foundation for several later features.
 
@@ -49,6 +50,13 @@ The foundation for several later features.
 
 Done when a decision remains visibly seen after restarting the process and
 loading a save made before that decision.
+
+Implemented as a versioned `profile.ron` beside the save slots, using the same
+atomic-write primitive. Lines, narrative choices and place options have stable
+content keys; previously taken buttons and hovered hotspot labels render in a
+muted style. Headless tests take real narrative and exploration choices, load a
+snapshot made before the exploration decision, start a second app on the same
+user-data directory, and verify the decisions remain visibly grey.
 
 ### 2. History / backlog screen
 

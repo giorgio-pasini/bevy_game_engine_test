@@ -8,6 +8,27 @@ Everything here actually happened in this repository.
 
 ---
 
+## Comparing a game framework with a genre engine as if they produce the same thing
+
+**What it looks like:** the Ren'Py version of a visual novel is much shorter,
+therefore the Bevy implementation was wasted work.
+
+**Why it bites:** the shorter project and the larger project have different
+boundaries. Ren'Py already owns dialogue flow, rollback, history, preferences,
+save thumbnails, distribution recipes and much of the UI. The Bevy project has
+been building those responsibilities as a reusable Rust library, including
+content validation and a colour-keyed point-and-click system. Comparing only
+the game scripts charges Bevy for producing an engine and gives Ren'Py its
+engine for free.
+
+**Instead:** decide whether the intended product is this game or a reusable
+engine, then compare the corresponding outputs. Keep exceptional mechanics in
+the comparison too: the Ren'Py spike used three rectangular hotspots over the
+same valley art, not the Bevy implementation's exact per-pixel lookup and
+build-time lookup-map audit.
+
+---
+
 ## Writing Bevy APIs from memory
 
 **What it looks like:** the assistant confidently writes idiomatic-looking Bevy
@@ -191,6 +212,33 @@ Harmless for idempotent assignment, silently corrupting the moment anyone adds
 an increment — a counter would advance on every load. The rule that survives:
 *replay reconstructs derived state only; anything in the snapshot is restored by
 deserialisation and never recomputed.*
+
+---
+
+## Putting irreversible player knowledge in a rollbackable save
+
+**What it looks like:** seen lines, selected choices, unlocks and achievements
+are ordinary fields on the save snapshot. They are player state, so the save is
+the obvious home.
+
+**Why it bites:** loading is deliberately a rollback. It should rewind the run,
+but those fields describe what the player has *ever* experienced. An older slot
+therefore revokes knowledge, makes read choices look new, and can relock rewards.
+
+**Evidence:** `vn_core` added a separate `profile.ron` for stable line and
+decision keys. Its completion test writes a save at a place, takes an option,
+loads the older save and starts a second app against the same user directory.
+The run rewinds; the option remains recorded and visibly grey in both apps.
+
+The first persistence system also cleared its dirty flag **before** attempting
+the atomic write. An I/O error would then report failure once and silently stop
+retrying, even though the in-memory profile had never reached disk. Review
+caught it before the full suite: dirty now clears only on success.
+
+**Instead:** separate rollbackable run state from monotonic player knowledge,
+version each independently, and prove the distinction with an old-save plus
+fresh-process test. Treat a dirty flag as an outstanding obligation, not as a
+request that can be forgotten when the first write attempt begins.
 
 ---
 

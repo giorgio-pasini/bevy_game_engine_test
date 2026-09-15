@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 
 use crate::map::HoveredHotspot;
 use crate::place::*;
+use crate::profile::PlayerProfile;
 use crate::save::{SaveSlots, Toast};
 use crate::story::*;
 
@@ -59,6 +60,11 @@ pub(crate) struct ChoiceRoot;
 
 #[derive(Component)]
 pub(crate) struct ChoiceButton(pub usize);
+
+/// Marks a choice or exploration button the persistent profile has recorded.
+/// Public so a consumer-level test can verify the player-visible state.
+#[derive(Component)]
+pub struct SeenDecision;
 
 /// The playing track, carrying **which track it is**. See [`BackgroundSprite`].
 #[derive(Component)]
@@ -495,7 +501,12 @@ pub(crate) fn draw_dialogue(
     }
 }
 
-pub(crate) fn spawn_choices(mut commands: Commands, choices: Res<PendingChoices>) {
+pub(crate) fn spawn_choices<S: GameScript>(
+    mut commands: Commands,
+    choices: Res<PendingChoices>,
+    state: Res<StoryState<S>>,
+    profile: Res<PlayerProfile>,
+) {
     if choices.items.is_empty() {
         return;
     }
@@ -514,30 +525,50 @@ pub(crate) fn spawn_choices(mut commands: Commands, choices: Res<PendingChoices>
             ChoiceRoot,
         ))
         .with_children(|parent| {
+            let origin = state.frames().last().and_then(|frame| match frame {
+                Frame::Story { scene, step } => Some((scene.name(), *step)),
+                Frame::Explore { .. } => None,
+            });
             for (label, index) in &choices.items {
-                parent
-                    .spawn((
-                        Button,
-                        Node {
-                            width: Val::Px(760.0),
-                            padding: UiRect::all(Val::Px(16.0)),
-                            justify_content: JustifyContent::Center,
+                let seen = origin
+                    .is_some_and(|(scene, step)| profile.has_choice(scene, step, *index));
+                let mut button = parent.spawn((
+                    Button,
+                    Node {
+                        width: Val::Px(760.0),
+                        padding: UiRect::all(Val::Px(16.0)),
+                        justify_content: JustifyContent::Center,
+                        ..default()
+                    },
+                    BackgroundColor(if seen {
+                        Color::srgba(0.06, 0.07, 0.09, 0.82)
+                    } else {
+                        Color::srgba(0.10, 0.12, 0.18, 0.92)
+                    }),
+                    BorderColor::all(if seen {
+                        Color::srgb(0.42, 0.43, 0.46)
+                    } else {
+                        Color::srgb(0.98, 0.82, 0.36)
+                    }),
+                    ChoiceButton(*index),
+                ));
+                if seen {
+                    button.insert(SeenDecision);
+                }
+                button.with_children(|b| {
+                    b.spawn((
+                        Text::new(label.clone()),
+                        TextFont {
+                            font_size: FontSize::Px(24.0),
                             ..default()
                         },
-                        BackgroundColor(Color::srgba(0.10, 0.12, 0.18, 0.92)),
-                        BorderColor::all(Color::srgb(0.98, 0.82, 0.36)),
-                        ChoiceButton(*index),
-                    ))
-                    .with_children(|b| {
-                        b.spawn((
-                            Text::new(label.clone()),
-                            TextFont {
-                                font_size: FontSize::Px(24.0),
-                                ..default()
-                            },
-                            TextColor(Color::srgb(0.94, 0.95, 0.97)),
-                        ));
-                    });
+                        TextColor(if seen {
+                            Color::srgb(0.55, 0.56, 0.59)
+                        } else {
+                            Color::srgb(0.94, 0.95, 0.97)
+                        }),
+                    ));
+                });
             }
         });
 }
@@ -574,6 +605,7 @@ pub(crate) fn spawn_place_view<S: GameScript>(
     mut commands: Commands,
     state: Res<StoryState<S>>,
     places: Res<Places>,
+    profile: Res<PlayerProfile>,
     mut stage: ResMut<Stage>,
 ) {
     let Some(id) = state.current_place() else {
@@ -651,29 +683,44 @@ pub(crate) fn spawn_place_view<S: GameScript>(
                 ));
             }
             for (index, option) in listed {
-                parent
-                    .spawn((
-                        Button,
-                        Node {
-                            width: Val::Px(700.0),
-                            padding: UiRect::all(Val::Px(14.0)),
-                            justify_content: JustifyContent::Center,
+                let seen = profile.has_place_option(id, index);
+                let mut button = parent.spawn((
+                    Button,
+                    Node {
+                        width: Val::Px(700.0),
+                        padding: UiRect::all(Val::Px(14.0)),
+                        justify_content: JustifyContent::Center,
+                        ..default()
+                    },
+                    BackgroundColor(if seen {
+                        Color::srgba(0.06, 0.07, 0.09, 0.82)
+                    } else {
+                        Color::srgba(0.10, 0.12, 0.18, 0.92)
+                    }),
+                    BorderColor::all(if seen {
+                        Color::srgb(0.42, 0.43, 0.46)
+                    } else {
+                        Color::srgb(0.98, 0.82, 0.36)
+                    }),
+                    PlaceOptionButton(index),
+                ));
+                if seen {
+                    button.insert(SeenDecision);
+                }
+                button.with_children(|b| {
+                    b.spawn((
+                        Text::new(option.label.clone()),
+                        TextFont {
+                            font_size: FontSize::Px(23.0),
                             ..default()
                         },
-                        BackgroundColor(Color::srgba(0.10, 0.12, 0.18, 0.92)),
-                        BorderColor::all(Color::srgb(0.98, 0.82, 0.36)),
-                        PlaceOptionButton(index),
-                    ))
-                    .with_children(|b| {
-                        b.spawn((
-                            Text::new(option.label.clone()),
-                            TextFont {
-                                font_size: FontSize::Px(23.0),
-                                ..default()
-                            },
-                            TextColor(Color::srgb(0.94, 0.95, 0.97)),
-                        ));
-                    });
+                        TextColor(if seen {
+                            Color::srgb(0.55, 0.56, 0.59)
+                        } else {
+                            Color::srgb(0.94, 0.95, 0.97)
+                        }),
+                    ));
+                });
             }
         });
 }
@@ -688,6 +735,7 @@ pub(crate) fn refresh_place_view<S: GameScript>(
     mut commands: Commands,
     state: Res<StoryState<S>>,
     places: Res<Places>,
+    profile: Res<PlayerProfile>,
     stage: ResMut<Stage>,
     roots: Query<(Entity, &ExploreRoot)>,
 ) {
@@ -702,17 +750,18 @@ pub(crate) fn refresh_place_view<S: GameScript>(
     for (e, _) in &roots {
         commands.entity(e).despawn();
     }
-    spawn_place_view::<S>(commands, state, places, stage);
+    spawn_place_view::<S>(commands, state, places, profile, stage);
 }
 
 /// Names the region under the cursor. The only writer of that text node.
 pub(crate) fn draw_hotspot_label<S: GameScript>(
     state: Res<StoryState<S>>,
     places: Res<Places>,
+    profile: Res<PlayerProfile>,
     hovered: Res<HoveredHotspot>,
-    mut label: Query<&mut Text, With<HotspotLabel>>,
+    mut label: Query<(&mut Text, &mut TextColor), With<HotspotLabel>>,
 ) {
-    let Ok(mut text) = label.single_mut() else {
+    let Ok((mut text, mut colour)) = label.single_mut() else {
         return; // not a map place
     };
     let wanted = hovered
@@ -721,12 +770,28 @@ pub(crate) fn draw_hotspot_label<S: GameScript>(
             let id = state.current_place()?;
             places.get(id)?.options.get(index)
         })
-        .map(|option| option.label.clone())
+        .map(|option| {
+            let place = state.current_place().unwrap_or_default();
+            (
+                option.label.clone(),
+                hovered
+                    .0
+                    .is_some_and(|index| profile.has_place_option(place, index)),
+            )
+        })
         .unwrap_or_default();
     // Guarded so an unchanging label does not mark the text as changed sixty
     // times a second and re-run text layout for nothing.
-    if text.0 != wanted {
-        text.0 = wanted;
+    if text.0 != wanted.0 {
+        text.0 = wanted.0;
+    }
+    let wanted_colour = if wanted.1 {
+        Color::srgb(0.55, 0.56, 0.59)
+    } else {
+        Color::srgb(0.94, 0.95, 0.97)
+    };
+    if colour.0 != wanted_colour {
+        colour.0 = wanted_colour;
     }
 }
 
@@ -745,14 +810,27 @@ pub(crate) fn pick_place_button(
 }
 
 pub(crate) fn highlight_choices(
-    mut buttons: Query<(&Interaction, &mut BackgroundColor), (Changed<Interaction>, With<Button>)>,
+    mut buttons: Query<
+        (&Interaction, &mut BackgroundColor, Option<&SeenDecision>),
+        (Changed<Interaction>, With<Button>),
+    >,
 ) {
-    for (interaction, mut colour) in &mut buttons {
+    for (interaction, mut colour, seen) in &mut buttons {
         *colour = match interaction {
             Interaction::Hovered | Interaction::Pressed => {
-                BackgroundColor(Color::srgba(0.22, 0.26, 0.36, 0.96))
+                if seen.is_some() {
+                    BackgroundColor(Color::srgba(0.13, 0.14, 0.17, 0.90))
+                } else {
+                    BackgroundColor(Color::srgba(0.22, 0.26, 0.36, 0.96))
+                }
             }
-            Interaction::None => BackgroundColor(Color::srgba(0.10, 0.12, 0.18, 0.92)),
+            Interaction::None => {
+                if seen.is_some() {
+                    BackgroundColor(Color::srgba(0.06, 0.07, 0.09, 0.82))
+                } else {
+                    BackgroundColor(Color::srgba(0.10, 0.12, 0.18, 0.92))
+                }
+            }
         };
     }
 }

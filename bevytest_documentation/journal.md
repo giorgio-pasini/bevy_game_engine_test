@@ -11,6 +11,8 @@ and get rewritten freely; this file is what preserves the history behind them.
 
 | Date | Decision | Entry |
 | --- | --- | --- |
+| 2026-08-19 | Keep the Bevy experiment and use a Ren'Py port as a responsibility baseline, not as a like-for-like engine replacement | [2026-08-19](#2026-08-19) |
+| 2026-08-16 | Monotonic player knowledge lives in a separate atomic profile, never in rollbackable saves | [2026-08-16](#2026-08-16) |
 | 2026-08-14 | Two consumers define a curated prelude; workspace metadata defines the shared development feature contract | [2026-08-14](#2026-08-14) |
 | 2026-08-14 | A tiny second consumer proves the reusable boundary before public-API cleanup | [2026-08-14](#2026-08-14) |
 | 2026-08-13 | Presentation asks spawned entities what exists; the retained scene cache is private behind one invariant | [2026-08-13](#2026-08-13) |
@@ -29,6 +31,96 @@ and get rewritten freely; this file is what preserves the history behind them.
 | 2026-07-30 | Snapshot saves, not `bevy_world_serialization` | [2026-07-30](#2026-07-30) |
 | 2026-07-30 | Cargo workspace over independent projects sharing a target dir | [2026-07-30](#2026-07-30) |
 | 2026-07-30 | Rust toolchain and build cache on D:, not the system drive | [2026-07-30](#2026-07-30) |
+
+---
+
+## 2026-08-19
+
+### Ren'Py comparison port
+
+Recreated the current Golden Golem adventure as a standalone project in
+`renpy/`: all 22 narrative scenes, conditional routes, four explorable places,
+inventory and trust state, the two-character stage, both music tracks, six save
+slots and the valley map. The map reuses the art but deliberately uses three
+rectangular hotspots rather than reproducing Bevy's colour-keyed pixel lookup.
+
+The experiment made the productivity difference concrete. Ren'Py expresses the
+story with labels, dialogue, menus, `call`/`return` and ordinary store variables,
+and supplies rollback, history, skip, auto-forward, preferences, save
+thumbnails and distribution support as engine features. Those are game-facing
+features still represented by separate engine and backlog work in Bevy.
+
+It also clarified why this is not proof that the Bevy work was a mistake. The
+Bevy output is a reusable Rust plugin with build-time content and binary-asset
+validation, exact colour-map hotspots, a second-consumer probe and engine-level
+tests. The Ren'Py output is this particular game. Ren'Py is the materially
+faster route if shipping this adventure is the goal; Bevy remains the relevant
+experiment if building and studying the reusable engine is the goal.
+
+### Evidence and residual risk
+
+- `python renpy\validate_port.py` passed: 22 expected scenes, 27 total labels,
+  seven copied assets and three hotspots.
+- The project occupies about 4.3 MB including copied media; source counts can be
+  reproduced with `Get-ChildItem renpy\game -Filter *.rpy | Get-Content |
+  Measure-Object -Line` rather than treated as a stable metric.
+- Ren'Py 8.5.3's own lint passed cleanly after parser compatibility fixes. The
+  first launch only exercised the main menu and missed an undefined
+  template-provided `quick_menu` variable at the first line of dialogue. After
+  defining it explicitly, a bounded warp-launch directly at that dialogue
+  screen remained running for eight seconds and produced no new traceback;
+  detailed visual inspection remains manual.
+
+### Changed in the other documents
+
+- Guide: added a practice for using a genre-engine spike to price framework
+  work by responsibility rather than raw line count.
+- Antipatterns: added the invalid like-for-like comparison between a shipped
+  game and a reusable engine.
+
+---
+
+## 2026-08-16
+
+### Backlog item 1: persistent player profile
+
+Added a versioned `profile.ron` beside the save slots. It records stable keys
+for displayed lines, taken narrative choices and taken place options. The
+profile is deliberately not part of `SaveState`: loading an older snapshot may
+rewind the run, but it must not make the player forget what they have actually
+seen.
+
+Choices and exploration buttons now derive a muted style from the profile.
+Colour-keyed map actions have no button to tint, so their hover label carries
+the same seen treatment. Recording stays on the shared input paths: narrative
+buttons record after `take_choice` accepts them, while both exploration buttons
+and hotspots pass through the existing single `PickedOption` consumer.
+
+Save slots and profiles now share one atomic-write primitive. The first draft
+cleared `ProfileDirty` before attempting I/O; that would have turned a transient
+failure into a permanently forgotten write. It now clears only after the atomic
+replace succeeds and remains dirty on error.
+
+### Evidence
+
+- A profile round-trip test covers all three key types and verifies no staging
+  file remains after the atomic replace.
+- A real headless narrative click records its scene, step and original option
+  index; revisiting the branch greys exactly that choice.
+- A real exploration click is made after a save, then the older save is loaded.
+  The run returns to the earlier place while the choice stays grey. A second
+  `App` using the same user-data directory loads the same visible knowledge.
+- `cargo wt`: 31 demo tests, 17 `vn_core` tests and 4 reuse-probe tests passed.
+- A bounded native `cargo vn` launch reached the running game and stayed alive
+  for ten seconds without schedule, asset or profile errors. The machine's
+  already-known stale Rockstar Vulkan-layer registration still logs an error;
+  it did not stop the app.
+
+### Where to pick up
+
+Player-facing backlog item 2: the history/backlog screen. Seen-line identity is
+now persistent, but the readable history itself should initially remain scoped
+to the current run as `BACKLOG.md` specifies.
 
 ---
 

@@ -23,7 +23,7 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::story::*;
 
@@ -239,6 +239,28 @@ fn now_secs() -> u64 {
         .unwrap_or(0)
 }
 
+/// Writes a user-data file beside a staging file, then atomically replaces it.
+/// Save slots and the player profile share this failure-sensitive primitive.
+pub(crate) fn write_atomic(path: &Path, text: &str) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("{} has no parent directory", path.display()))?;
+    std::fs::create_dir_all(parent)
+        .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+    let extension = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| format!("{e}.tmp"))
+        .unwrap_or_else(|| "tmp".to_string());
+    let staging = path.with_extension(extension);
+    std::fs::write(&staging, text)
+        .map_err(|e| format!("cannot write {}: {e}", staging.display()))?;
+    std::fs::rename(&staging, path).map_err(|e| {
+        let _ = std::fs::remove_file(&staging);
+        format!("cannot replace {}: {e}", path.display())
+    })
+}
+
 pub fn write_slot(slots: &SaveSlots, slot: u8, state: SaveState, location: String) -> Result<(), String> {
     let file = SaveFile {
         version: SAVE_VERSION,
@@ -248,23 +270,13 @@ pub fn write_slot(slots: &SaveSlots, slot: u8, state: SaveState, location: Strin
     };
     let text = ron::ser::to_string_pretty(&file, ron::ser::PrettyConfig::default())
         .map_err(|e| format!("cannot serialise save: {e}"))?;
-    std::fs::create_dir_all(&slots.root)
-        .map_err(|e| format!("cannot create {}: {e}", slots.root.display()))?;
-
     // Write beside the slot, then rename over it. Writing in place means a
     // crash, a full disk or a lost battery mid-write leaves a truncated file —
     // and the file it truncates is the player's only copy. Rename is atomic on
     // both Windows and POSIX, so the slot is either the old save or the new
     // one, never half of either.
     let path = slots.path(slot);
-    let staging = path.with_extension("ron.tmp");
-    std::fs::write(&staging, text)
-        .map_err(|e| format!("cannot write {}: {e}", staging.display()))?;
-    std::fs::rename(&staging, &path).map_err(|e| {
-        // Leave no litter behind if the rename is what failed.
-        let _ = std::fs::remove_file(&staging);
-        format!("cannot replace {}: {e}", path.display())
-    })
+    write_atomic(&path, &text)
 }
 
 pub fn read_slot(slots: &SaveSlots, slot: u8) -> Result<SaveFile, String> {

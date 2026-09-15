@@ -26,11 +26,25 @@ use bevy::window::WindowResolution;
 use vn_core::prelude::*;
 // Not in the prelude: these are internal presentation details, but asserting on
 // them is precisely how these tests check what a player would actually see.
-use vn_core::present::{BackgroundSprite, CharacterSprite, MusicPlayer, PlaceOptionButton};
+use vn_core::present::{
+    BackgroundSprite, CharacterSprite, MusicPlayer, PlaceOptionButton, SeenDecision,
+};
 
 use crate::scenes;
 
 fn harness() -> App {
+    let root = std::env::temp_dir().join(format!(
+        "vn_core_test_saves_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    harness_at(root)
+}
+
+fn harness_at(root: std::path::PathBuf) -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
         .add_plugins(AssetPlugin::default())
@@ -53,14 +67,6 @@ fn harness() -> App {
         });
     // Saves must never land in the player's game folder from a test run, and two
     // tests must never share a slot file.
-    let root = std::env::temp_dir().join(format!(
-        "vn_core_test_saves_{}_{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0)
-    ));
     app.insert_resource(SaveSlots { root: root.clone() });
     // Held *as a resource* so it dies with the `App` — which happens at the end
     // of the test whether it passed or panicked, and needs no cleanup line in
@@ -181,6 +187,13 @@ fn option_buttons(app: &mut App) -> usize {
         .query::<&PlaceOptionButton>()
         .iter(app.world())
         .count()
+}
+
+fn option_is_seen(app: &mut App, index: usize) -> bool {
+    app.world_mut()
+        .query::<(&PlaceOptionButton, Option<&SeenDecision>)>()
+        .iter(app.world())
+        .any(|(button, seen)| button.0 == index && seen.is_some())
 }
 
 #[test]
@@ -809,6 +822,182 @@ fn pressing_an_option_button_applies_that_option() {
             .current_place(),
         Some("cairn"),
         "pressing the button should have moved the player"
+    );
+}
+
+#[test]
+fn profile_knowledge_survives_an_old_save_and_a_new_app_and_greys_the_option() {
+    let root = std::env::temp_dir().join(format!(
+        "vn_core_profile_app_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    let mut first = harness_at(root.clone());
+    settle(&mut first);
+    go(&mut first, AppState::Playing);
+
+    assert!(
+        first
+            .world()
+            .resource::<PlayerProfile>()
+            .seen_lines
+            .contains(&SeenLine {
+                scene: "awakening".into(),
+                step: 2,
+            }),
+        "the opening narration should be recorded by its stable scene and step"
+    );
+
+    first
+        .world_mut()
+        .resource_mut::<StoryState<scenes::SceneId>>()
+        .push_place("ridge".to_string());
+    go(&mut first, AppState::Exploring);
+
+    let places = scenes::places();
+    let wanted = places
+        .get("ridge")
+        .unwrap()
+        .options
+        .iter()
+        .position(|o| matches!(&o.effect, Effect::GoTo(t) if t == "cairn"))
+        .expect("the ridge should offer a way to the cairn");
+
+    // This snapshot predates the decision. Loading it later must restore the
+    // run without rolling back knowledge stored in the separate profile.
+    save_now(&mut first);
+
+    let button = first
+        .world_mut()
+        .query::<(Entity, &PlaceOptionButton)>()
+        .iter(first.world())
+        .find(|(_, button)| button.0 == wanted)
+        .map(|(entity, _)| entity)
+        .expect("the cairn option should be on screen");
+    first
+        .world_mut()
+        .entity_mut(button)
+        .insert(Interaction::Pressed);
+    settle(&mut first);
+
+    let seen = SeenPlaceOption {
+        place: "ridge".into(),
+        option: wanted,
+    };
+    assert!(
+        first
+            .world()
+            .resource::<PlayerProfile>()
+            .seen_place_options
+            .contains(&seen),
+        "taking the option should record it"
+    );
+    assert!(
+        read_profile(&slots(&first))
+            .expect("the dirty profile should have been persisted")
+            .seen_place_options
+            .contains(&seen),
+        "the on-disk profile should contain the decision"
+    );
+
+    load_now(&mut first);
+    assert_eq!(
+        first
+            .world()
+            .resource::<StoryState<scenes::SceneId>>()
+            .current_place(),
+        Some("ridge"),
+        "precondition: the older save returns to the ridge"
+    );
+    assert!(
+        option_is_seen(&mut first, wanted),
+        "loading an older save must not un-grey a decision made afterwards"
+    );
+
+    // A second app using the same per-user directory stands in for restarting
+    // the process. Keep the first alive so its Drop guard cannot remove the
+    // shared directory until after the assertion.
+    let mut restarted = harness_at(root);
+    settle(&mut restarted);
+    go(&mut restarted, AppState::Playing);
+    restarted
+        .world_mut()
+        .resource_mut::<StoryState<scenes::SceneId>>()
+        .push_place("ridge".to_string());
+    go(&mut restarted, AppState::Exploring);
+    assert!(
+        option_is_seen(&mut restarted, wanted),
+        "the restarted app should load the profile and visibly grey the option"
+    );
+}
+
+#[test]
+fn taking_a_story_choice_records_and_greys_that_choice() {
+    let mut app = harness();
+    settle(&mut app);
+    go(&mut app, AppState::Playing);
+
+    let branch = || {
+        StoryState::from_frames(
+            vec![Frame::Story {
+                scene: scenes::SceneId::Introductions,
+                step: 4,
+            }],
+            Default::default(),
+            Default::default(),
+        )
+        .expect("the fixture has a story frame")
+    };
+    app.insert_resource(branch());
+    advance_once(&mut app);
+    app.world_mut()
+        .resource_mut::<NextState<PlayMode>>()
+        .set(PlayMode::AwaitingChoice);
+    settle(&mut app);
+
+    let buttons: Vec<Entity> = app
+        .world_mut()
+        .query_filtered::<Entity, With<Button>>()
+        .iter(app.world())
+        .collect();
+    assert_eq!(buttons.len(), 3, "the fixture branch should draw three choices");
+    app.world_mut()
+        .entity_mut(buttons[0])
+        .insert(Interaction::Pressed);
+    settle(&mut app);
+
+    let recorded = app
+        .world()
+        .resource::<PlayerProfile>()
+        .seen_choices
+        .iter()
+        .find(|seen| seen.scene == "introductions" && seen.step == 4)
+        .cloned()
+        .expect("pressing a story choice should record its stable origin");
+
+    app.insert_resource(branch());
+    advance_once(&mut app);
+    app.world_mut()
+        .resource_mut::<NextState<PlayMode>>()
+        .set(PlayMode::AwaitingChoice);
+    settle(&mut app);
+
+    assert_eq!(
+        app.world_mut()
+            .query_filtered::<Entity, With<SeenDecision>>()
+            .iter(app.world())
+            .count(),
+        1,
+        "only the previously selected option should be greyed"
+    );
+    assert!(
+        app.world()
+            .resource::<PlayerProfile>()
+            .has_choice(&recorded.scene, recorded.step, recorded.option),
+        "the grey marker must derive from the recorded profile key"
     );
 }
 

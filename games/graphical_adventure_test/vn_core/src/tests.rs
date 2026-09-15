@@ -13,10 +13,11 @@
 // Only `Image`, deliberately not the prelude: `bevy::prelude::Scene` collides
 // with `story::Scene`, and glob-importing both makes every mention ambiguous.
 use bevy::prelude::Image;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::map::*;
 use crate::place::*;
+use crate::profile::*;
 use crate::save::*;
 use crate::story::*;
 
@@ -609,6 +610,51 @@ fn writing_a_slot_replaces_it_atomically_and_leaves_no_staging_file() {
         "the staging file must not survive a successful write"
     );
 
+}
+
+#[test]
+fn player_profile_round_trips_beside_saves_without_a_staging_file() {
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let root = std::env::temp_dir().join(format!(
+        "vn_core_profile_{}_{unique}",
+        std::process::id()
+    ));
+    let slots = SaveSlots { root: root.clone() };
+    struct TempDir(std::path::PathBuf);
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    let _cleanup = TempDir(root);
+
+    let profile = PlayerProfile {
+        seen_lines: BTreeSet::from([SeenLine {
+            scene: "opening".into(),
+            step: 3,
+        }]),
+        seen_choices: BTreeSet::from([SeenChoice {
+            scene: "branch".into(),
+            step: 1,
+            option: 1,
+        }]),
+        seen_place_options: BTreeSet::from([SeenPlaceOption {
+            place: "hall".into(),
+            option: 0,
+        }]),
+    };
+
+    write_profile(&slots, &profile).expect("profile write");
+
+    assert_eq!(read_profile(&slots).expect("profile read"), profile);
+    assert_eq!(profile_path(&slots), slots.root.join("profile.ron"));
+    assert!(
+        !profile_path(&slots).with_extension("ron.tmp").exists(),
+        "the atomic staging file must not survive a successful profile write"
+    );
 }
 
 #[test]

@@ -11,6 +11,7 @@ mod letterbox;
 pub mod map;
 pub mod place;
 pub mod present;
+pub mod profile;
 pub mod save;
 pub mod story;
 
@@ -21,6 +22,10 @@ pub mod prelude {
     pub use crate::map::{HoveredHotspot, MapLookup, sample_design_point};
     pub use crate::place::{Effect, Place, PlaceOption, Places, Rgb};
     pub use crate::present::{DESIGN_H, DESIGN_W};
+    pub use crate::profile::{
+        PROFILE_VERSION, PlayerProfile, SeenChoice, SeenLine, SeenPlaceOption, profile_path,
+        read_profile, write_profile,
+    };
     pub use crate::save::{
         LoadRequest, SAVE_VERSION, SaveFile, SaveSlots, SaveState, SavedFrame, capture,
         read_slot, restore, write_slot,
@@ -36,6 +41,7 @@ pub mod prelude {
 
 use place::*;
 use present::*;
+use profile::*;
 use save::*;
 use story::*;
 
@@ -101,12 +107,17 @@ impl<S: GameScript> Plugin for VnPlugin<S> {
         .init_resource::<map::MapLookup>()
         .init_resource::<map::HoveredHotspot>()
         .init_resource::<SaveSlots>()
+        .init_resource::<PlayerProfile>()
+        .init_resource::<ProfileDirty>()
         .init_resource::<LoadRequest>()
         .init_resource::<PendingLoad>()
         .init_resource::<Toast>()
         .init_state::<AppState>()
         .add_sub_state::<PlayMode>()
-        .add_systems(Startup, (letterbox::spawn_camera, spawn_toast))
+        .add_systems(
+            Startup,
+            (letterbox::spawn_camera, spawn_toast, load_profile),
+        )
         .add_systems(OnEnter(AppState::MainMenu), spawn_menu)
         // Starting a NEW game happens on leaving the menu — see `restart`.
         .add_systems(OnExit(AppState::MainMenu), restart::<S>)
@@ -121,7 +132,7 @@ impl<S: GameScript> Plugin for VnPlugin<S> {
         .add_systems(OnExit(AppState::Playing), clear_visuals)
         .add_systems(OnEnter(AppState::MainMenu), stop_everything)
         .add_systems(OnExit(AppState::Exploring), clear_visuals)
-        .add_systems(OnEnter(PlayMode::AwaitingChoice), spawn_choices)
+        .add_systems(OnEnter(PlayMode::AwaitingChoice), spawn_choices::<S>)
         .add_systems(OnExit(PlayMode::AwaitingChoice), despawn_choices)
         .add_systems(OnEnter(PlayMode::Finished), spawn_end_screen)
         // One total order for the frame. `Story` and `Explore` are mutually
@@ -165,6 +176,7 @@ impl<S: GameScript> Plugin for VnPlugin<S> {
                 advance_on_input::<S>,
                 reveal_text,
                 choose_on_click::<S>,
+                record_displayed_line::<S>,
                 draw_dialogue,
             )
                 .chain()
@@ -191,7 +203,12 @@ impl<S: GameScript> Plugin for VnPlugin<S> {
                 .chain()
                 .in_set(VnSet::Explore),
         )
-        .add_systems(Update, save_on_key::<S>.in_set(VnSet::Persist))
+        .add_systems(
+            Update,
+            (persist_profile, save_on_key::<S>)
+                .chain()
+                .in_set(VnSet::Persist),
+        )
         // Presentation runs in every state, so leaving `Playing` actually tears
         // the screen down — and now runs *after* the logic, so what is drawn is
         // this frame's state rather than last frame's.
@@ -496,6 +513,8 @@ fn advance_on_input<S: GameScript>(
 fn choose_on_click<S: GameScript>(
     buttons: Query<(&Interaction, &ChoiceButton), Changed<Interaction>>,
     mut state: ResMut<StoryState<S>>,
+    mut profile: ResMut<PlayerProfile>,
+    mut profile_dirty: ResMut<ProfileDirty>,
     mut stage: ResMut<Stage>,
     mut line: ResMut<CurrentLine>,
     mut choices: ResMut<PendingChoices>,
@@ -507,7 +526,18 @@ fn choose_on_click<S: GameScript>(
         if *interaction != Interaction::Pressed {
             continue;
         }
+        let key = state.frames().last().and_then(|frame| match frame {
+            Frame::Story { scene, step } => Some(SeenChoice {
+                scene: scene.name().to_string(),
+                step: *step,
+                option: button.0,
+            }),
+            Frame::Explore { .. } => None,
+        });
         if take_choice(button.0, &mut state) {
+            if key.is_some_and(|key| profile.seen_choices.insert(key)) {
+                profile_dirty.0 = true;
+            }
             choices.items.clear();
             let flow = advance(&mut state, &mut stage, &mut line, &mut choices);
             apply_flow(flow, app_state.get(), &mut next_app, &mut next_mode);
@@ -525,6 +555,8 @@ fn choose_on_click<S: GameScript>(
 fn apply_picked_option<S: GameScript>(
     mut picked: ResMut<PickedOption>,
     mut state: ResMut<StoryState<S>>,
+    mut profile: ResMut<PlayerProfile>,
+    mut profile_dirty: ResMut<ProfileDirty>,
     places: Res<Places>,
     mut stage: ResMut<Stage>,
     mut line: ResMut<CurrentLine>,
@@ -536,7 +568,20 @@ fn apply_picked_option<S: GameScript>(
     let Some(index) = picked.0.take() else {
         return;
     };
+    let key = state.current_place().and_then(|place| {
+        places
+            .get(place)
+            .and_then(|place_data| place_data.options.get(index))
+            .filter(|option| allowed(&option.condition, &state.flags, &state.items))
+            .map(|_| SeenPlaceOption {
+                place: place.to_string(),
+                option: index,
+            })
+    });
     let flow = take_option(index, &mut state, &places);
+    if key.is_some_and(|key| profile.seen_place_options.insert(key)) {
+        profile_dirty.0 = true;
+    }
     // Calling a scene or leaving lands us mid-frame, so run the engine to
     // reach the next thing that actually waits for the player.
     let flow = match flow {

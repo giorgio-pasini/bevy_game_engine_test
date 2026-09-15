@@ -142,6 +142,28 @@ Two consequences worth taking:
 > went red: the ambient field, the restored flags, and the cursor correction
 > below.
 
+### Keep monotonic player knowledge outside rollbackable saves
+`[architecture]` `[testing]` — **measured**
+
+A save slot answers *where this run was then*. Seen lines, taken decisions,
+unlocks and achievements answer *what this player has ever experienced*. The
+first is allowed to move backwards; the second is monotonic. Putting both in
+the snapshot means loading an older slot makes the player forget knowledge they
+genuinely earned.
+
+Store that knowledge in a separate, versioned profile in the same per-user
+directory. Story state may consult it for presentation — greying a choice, or
+restricting skip to read text — but loading a slot must never replace it.
+
+Test the boundary vertically: save, make a decision, load the older save, then
+construct a fresh app on the same user-data directory. The decision should
+remain in the profile and remain visibly marked in both apps. This catches
+rollback, persistence and presentation disagreement in one scenario.
+
+> Measured in a headless Bevy app: a real exploration click survived a
+> pre-decision save load and a second `App`, while the matching option stayed
+> grey; a separate real narrative click greyed exactly the selected choice.
+
 ### Put test cleanup in `Drop`, never at the end of the test
 `[rust]` `[testing]` — **measured**
 
@@ -595,6 +617,11 @@ three lines, and it is the difference between "lost the last five minutes" and
 Delete the staging file if the rename itself fails, or a failure leaves litter
 that the next attempt has to reason about.
 
+If writes are driven by a dirty flag, clear it **only after** the atomic replace
+succeeds. Clearing it before I/O turns a transient disk or permission failure
+into permanent data loss for the rest of the process: nothing knows it still
+owes the write.
+
 ### Resolve user-data paths from the environment, not from a crate
 `[rust]` `[tooling]` — **confirmed**
 
@@ -741,6 +768,26 @@ codec or subsystem is available.
 ---
 
 ## Working with the AI
+
+### Prototype once in a genre engine before pricing framework work
+`[ai-workflow]` — **demonstrated**
+
+When the game belongs to a mature genre, rebuild one representative vertical
+slice in a purpose-built engine before estimating the value of custom engine
+work. Compare responsibilities, not only source-line counts: content flow,
+save/load, history, rollback, preferences, distribution tooling, validation and
+the exceptional mechanics the genre engine does not naturally express.
+
+The comparison makes the trade explicit. A genre engine compresses familiar
+gameplay into its language and supplies player-facing systems immediately; a
+framework spends more work up front but gives exact control and can produce a
+reusable engine rather than one game. The right choice depends on which output
+is the actual product.
+
+> Demonstrated 2026-08-19 by porting the current 22-scene Golden Golem
+> adventure to a small Ren'Py project. Labels, menus and screens covered the
+> story and exploration directly, while the exact colour-keyed map lookup and
+> build-time pixel audit remained custom Bevy-engine capabilities.
 
 ### Test the documentation against the code
 `[ai-workflow]` `[testing]` — **measured**
