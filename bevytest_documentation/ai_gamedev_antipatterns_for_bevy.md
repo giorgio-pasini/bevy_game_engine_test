@@ -8,6 +8,21 @@ Everything here actually happened in this repository.
 
 ---
 
+## Treating engine sentinel values as ordinary numbers
+
+**What it looks like:** a typewriter controller compares visible characters with
+the line length and concludes a negative count means the line is unfinished.
+
+**Evidence:** Godot uses -1 to display the entire text. The port's instant-text
+setting consequently consumed the first advance input to reveal an already
+visible line. A test driving the real application found it; the pure narrative
+graph was correct throughout.
+
+**Instead:** handle the sentinel explicitly before ordinary range comparisons,
+and exercise both animated and instant presentation settings.
+
+---
+
 ## Comparing a game framework with a genre engine as if they produce the same thing
 
 **What it looks like:** the Ren'Py version of a visual novel is much shorter,

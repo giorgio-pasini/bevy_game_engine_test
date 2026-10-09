@@ -1,0 +1,340 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
+
+[node name="GoldenGolem" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_main")
+
+[node name="Background" type="TextureRect" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+expand_mode = 1
+stretch_mode = 6
+mouse_filter = 2
+
+[node name="Cast" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Mira" type="TextureRect" parent="Cast"]
+unique_name_in_owner = true
+offset_left = 160.0
+offset_top = 328.0
+offset_right = 930.0
+offset_bottom = 1050.0
+expand_mode = 1
+stretch_mode = 5
+mouse_filter = 2
+
+[node name="Golem" type="TextureRect" parent="Cast"]
+unique_name_in_owner = true
+offset_left = 990.0
+offset_top = 190.0
+offset_right = 1760.0
+offset_bottom = 1050.0
+expand_mode = 1
+stretch_mode = 5
+mouse_filter = 2
+
+[node name="MapHotspots" type="Control" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Cairn" type="Button" parent="MapHotspots"]
+unique_name_in_owner = true
+offset_left = 550.0
+offset_top = 180.0
+offset_right = 850.0
+offset_bottom = 480.0
+flat = true
+
+[node name="Ledge" type="Button" parent="MapHotspots"]
+unique_name_in_owner = true
+offset_left = 1150.0
+offset_top = 560.0
+offset_right = 1580.0
+offset_bottom = 790.0
+flat = true
+
+[node name="Ridge" type="Button" parent="MapHotspots"]
+unique_name_in_owner = true
+offset_left = 250.0
+offset_top = 600.0
+offset_right = 640.0
+offset_bottom = 900.0
+flat = true
+
+[node name="MapCaption" type="PanelContainer" parent="MapHotspots"]
+unique_name_in_owner = true
+offset_left = 560.0
+offset_top = 930.0
+offset_right = 1360.0
+offset_bottom = 1018.0
+
+[node name="Label" type="Label" parent="MapHotspots/MapCaption"]
+layout_mode = 2
+text = "Move over a landmark"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="ChoiceList" type="VBoxContainer" parent="."]
+unique_name_in_owner = true
+visible = false
+offset_left = 510.0
+offset_top = 330.0
+offset_right = 1410.0
+offset_bottom = 760.0
+theme_override_constants/separation = 14
+
+[node name="PlacePanel" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+visible = false
+offset_left = 480.0
+offset_top = 700.0
+offset_right = 1440.0
+offset_bottom = 1015.0
+
+[node name="Margin" type="MarginContainer" parent="PlacePanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 40
+theme_override_constants/margin_top = 28
+theme_override_constants/margin_right = 40
+theme_override_constants/margin_bottom = 28
+
+[node name="Rows" type="VBoxContainer" parent="PlacePanel/Margin"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Caption" type="Label" parent="PlacePanel/Margin/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+horizontal_alignment = 1
+
+[node name="Options" type="VBoxContainer" parent="PlacePanel/Margin/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Dialogue" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+visible = false
+offset_left = 130.0
+offset_top = 815.0
+offset_right = 1790.0
+offset_bottom = 1045.0
+
+[node name="Margin" type="MarginContainer" parent="Dialogue"]
+layout_mode = 2
+theme_override_constants/margin_left = 55
+theme_override_constants/margin_top = 26
+theme_override_constants/margin_right = 55
+theme_override_constants/margin_bottom = 26
+
+[node name="Rows" type="VBoxContainer" parent="Dialogue/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 9
+
+[node name="Speaker" type="Label" parent="Dialogue/Margin/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="Line" type="RichTextLabel" parent="Dialogue/Margin/Rows"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 118)
+layout_mode = 2
+fit_content = true
+scroll_active = false
+
+[node name="QuickMenu" type="HBoxContainer" parent="."]
+unique_name_in_owner = true
+visible = false
+offset_left = 960.0
+offset_top = 20.0
+offset_right = 1880.0
+offset_bottom = 76.0
+alignment = 2
+theme_override_constants/separation = 8
+
+[node name="Back" type="Button" parent="QuickMenu"]
+layout_mode = 2
+text = "Back"
+[node name="Save" type="Button" parent="QuickMenu"]
+layout_mode = 2
+text = "Save"
+[node name="Load" type="Button" parent="QuickMenu"]
+layout_mode = 2
+text = "Load"
+[node name="Prefs" type="Button" parent="QuickMenu"]
+layout_mode = 2
+text = "Prefs"
+[node name="History" type="Button" parent="QuickMenu"]
+layout_mode = 2
+text = "History"
+[node name="Auto" type="Button" parent="QuickMenu"]
+layout_mode = 2
+text = "Auto"
+[node name="Skip" type="Button" parent="QuickMenu"]
+layout_mode = 2
+text = "Skip"
+
+[node name="SkipIndicator" type="Label" parent="."]
+unique_name_in_owner = true
+visible = false
+offset_left = 1660.0
+offset_top = 1000.0
+offset_right = 1870.0
+offset_bottom = 1045.0
+text = "Skipping…"
+horizontal_alignment = 2
+
+[node name="MainShade" type="ColorRect" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.031, 0.039, 0.067, 0.67)
+
+[node name="MainMenu" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+offset_left = 1190.0
+offset_top = 235.0
+offset_right = 1810.0
+offset_bottom = 845.0
+
+[node name="Margin" type="MarginContainer" parent="MainMenu"]
+layout_mode = 2
+theme_override_constants/margin_left = 55
+theme_override_constants/margin_top = 55
+theme_override_constants/margin_right = 55
+theme_override_constants/margin_bottom = 55
+
+[node name="Rows" type="VBoxContainer" parent="MainMenu/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 18
+
+[node name="Title" type="Label" parent="MainMenu/Margin/Rows"]
+layout_mode = 2
+text = "Golden Golem"
+[node name="Subtitle" type="Label" parent="MainMenu/Margin/Rows"]
+layout_mode = 2
+text = "A side-by-side Godot experiment"
+[node name="Spacer" type="Control" parent="MainMenu/Margin/Rows"]
+custom_minimum_size = Vector2(0, 20)
+layout_mode = 2
+[node name="NewGame" type="Button" parent="MainMenu/Margin/Rows"]
+layout_mode = 2
+text = "New Game"
+[node name="Continue" type="Button" parent="MainMenu/Margin/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Continue — slot 1"
+[node name="Load" type="Button" parent="MainMenu/Margin/Rows"]
+layout_mode = 2
+text = "Load"
+[node name="Preferences" type="Button" parent="MainMenu/Margin/Rows"]
+layout_mode = 2
+text = "Preferences"
+[node name="Quit" type="Button" parent="MainMenu/Margin/Rows"]
+layout_mode = 2
+text = "Quit"
+
+[node name="ModalShade" type="ColorRect" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.02, 0.025, 0.04, 0.96)
+
+[node name="Modal" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+visible = false
+offset_left = 70.0
+offset_top = 55.0
+offset_right = 1850.0
+offset_bottom = 1025.0
+
+[node name="Margin" type="MarginContainer" parent="Modal"]
+layout_mode = 2
+theme_override_constants/margin_left = 55
+theme_override_constants/margin_top = 45
+theme_override_constants/margin_right = 55
+theme_override_constants/margin_bottom = 45
+
+[node name="Rows" type="VBoxContainer" parent="Modal/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 22
+
+[node name="Header" type="HBoxContainer" parent="Modal/Margin/Rows"]
+layout_mode = 2
+[node name="Title" type="Label" parent="Modal/Margin/Rows/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Menu"
+[node name="Close" type="Button" parent="Modal/Margin/Rows/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Return"
+
+[node name="Body" type="MarginContainer" parent="Modal/Margin/Rows"]
+layout_mode = 2
+size_flags_vertical = 3
+[node name="ModalBody" type="Control" parent="Modal/Margin/Rows/Body"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="Notification" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+visible = false
+offset_left = 660.0
+offset_top = 35.0
+offset_right = 1260.0
+offset_bottom = 100.0
+[node name="Label" type="Label" parent="Notification"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Saved"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Music" type="AudioStreamPlayer" parent="."]
+unique_name_in_owner = true
+bus = &"Master"
+[node name="AutoTimer" type="Timer" parent="."]
+unique_name_in_owner = true
+one_shot = true
+[node name="NotifyTimer" type="Timer" parent="."]
+unique_name_in_owner = true
+wait_time = 3.25
+one_shot = true
+

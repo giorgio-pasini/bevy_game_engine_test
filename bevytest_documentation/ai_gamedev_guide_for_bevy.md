@@ -12,6 +12,20 @@ Every entry is tagged by scope and marked with evidence strength — see
 
 ## Working with the engine
 
+### Verify a port through source, input and rendered screens separately
+`[ai-workflow]` `[testing]` — **measured**
+
+A content graph proves reachable outcomes; it does not prove that clicks reach
+the controller or that a menu resembles its reference. For an engine comparison,
+check translated commands against the actual source, inject input through the
+engine's event dispatch, then render and inspect matching screen states.
+
+> The Godot port's graph walk passed while direct method calls hid the risk of
+> a root Control swallowing clicks. Input dispatch exercised the real path.
+> Rendered comparisons separately exposed menu-layout differences and showed
+> that Ren'Py's inactive-character brightness subtracts colour rather than
+> multiplying it. Verified with Godot 4.5.1, 2026-10-09.
+
 ### Keep a version-matched engine checkout and read it before writing code
 `[bevy]` `[ai-workflow]` — **confirmed**
 

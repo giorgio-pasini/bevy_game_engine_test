@@ -34,6 +34,49 @@ and get rewritten freely; this file is what preserves the history behind them.
 
 ---
 
+## 2026-10-09
+
+### Godot comparison port
+
+Created a separate Godot 4.5.1 project in godot/ using typed GDScript, the
+Ren'Py adventure as the fidelity reference, and identical source media.
+Translated all 22 narrative scenes, conditional routes and state effects;
+implemented the four locations and same rectangular valley hotspots.
+
+Godot supplies nodes, containers, input dispatch, import and rendering. Unlike
+Ren'Py it does not supply this game's narrative interpreter, rollback, history,
+read-only skip, auto-forward, six save slots/thumbnails or persistent choice
+history. Those responsibilities are explicit GDScript in this port. Character
+tuning is exposed in the Inspector; the UI scene and external story remain
+editable independently.
+
+### Evidence and findings
+
+- tools/validate_port.py compares every narrative command with the Ren'Py source,
+  including branches, state effects, staging and music, and hashes original
+  media. It passes.
+- run.ps1 -Test walks 521 distinct states, reaches every narrative scene and
+  ending label and all 13 place actions, then drives the actual app and input
+  dispatcher. It verifies rollback, save/load during exploration dialogue,
+  inventory consumption, persistent knowledge across a fresh app, music looping,
+  skip and auto-forward. Run the command for the current coverage report.
+- Native OpenGL screenshots were inspected against isolated Ren'Py reference
+  captures. This caught different menu geometry and the subtractive inactive
+  brightness rule, both corrected in Godot.
+- Instant-text advance initially mishandled Godot's -1 visible-character sentinel;
+  the app test caught it. JSON numeric type conversion also required semantic
+  comparison in the test rather than string identity.
+- Save formats remain engine-specific. Windows export configuration exists, but
+  no distribution executable was exported in this session. Preferences use
+  visible native sliders rather than reproducing the reference's off-screen
+  unstyled-bar layout.
+
+Guide: added separate source/input/render evidence for ports. Antipatterns:
+added sentinel-value misuse. Detailed run instructions and parity boundaries
+live in godot/README.md.
+
+---
+
 ## 2026-08-19
 
 ### Ren'Py comparison port

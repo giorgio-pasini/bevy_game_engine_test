@@ -1,0 +1,213 @@
+{
+  "format_version": 1,
+  "start": "awakening",
+  "scenes": {
+    "awakening": [
+      {"type":"stage","background":"mountains","cast":[]},
+      {"type":"music","track":"mystery"},
+      {"type":"say","speaker":"","text":"Three days up the pass, and the mountain has not once looked back at you."},
+      {"type":"stage","background":"mountains","cast":["mira"]},
+      {"type":"say","speaker":"mira","text":"Right. Either that ridge moved, or I've been walking in a circle since noon."},
+      {"type":"say","speaker":"","text":"Then the cloud parts — and something vast turns its head."},
+      {"type":"stage","background":"mountains","cast":["mira","golem"]},
+      {"type":"say","speaker":"golem","text":"You are small. And you are late."},
+      {"type":"say","speaker":"mira","text":"...Late for what, exactly?"},
+      {"type":"say","speaker":"golem","text":"I have been counting winters since anyone last climbed this far. Six hundred and eleven. You are late by all of them."},
+      {"type":"jump","target":"introductions"}
+    ],
+    "introductions": [
+      {"type":"stage","background":"mountains","cast":["mira","golem"]},
+      {"type":"say","speaker":"golem","text":"Speak, then. Travellers used to give a name before they gave demands."},
+      {"type":"choice","options":[
+        {"text":"\"Mira. And I'm not demanding anything.\"","target":"gave_name"},
+        {"text":"Say nothing, and study the gears in his chest.","target":"stayed_silent"},
+        {"text":"\"I'm lost. I'll admit that much.\"","target":"admitted_lost"}
+      ]}
+    ],
+    "gave_name": [
+      {"type":"stage","background":"mountains","cast":["mira","golem"]},
+      {"type":"set","key":"knows_name","value":true},
+      {"type":"add","key":"trust","value":2},
+      {"type":"say","speaker":"mira","text":"Mira. And I'm not demanding anything — I'd just like to know what I'm looking at."},
+      {"type":"say","speaker":"golem","text":"Mira."},
+      {"type":"say","speaker":"","text":"He says it slowly, the way you'd handle something you were afraid of dropping."},
+      {"type":"say","speaker":"golem","text":"Good. A name is a thing that can be given back later."},
+      {"type":"jump","target":"the_offer"}
+    ],
+    "stayed_silent": [
+      {"type":"stage","background":"mountains","cast":["mira","golem"]},
+      {"type":"say","speaker":"","text":"You keep your mouth shut and your eyes on the machinery: a lattice of gold wheels, most of them still, one of them bent badly out of true."},
+      {"type":"say","speaker":"golem","text":"Careful. Staring is its own kind of demand."},
+      {"type":"say","speaker":"mira","text":"..."},
+      {"type":"say","speaker":"golem","text":"As you like. Silence keeps well up here. Everything does."},
+      {"type":"jump","target":"the_offer"}
+    ],
+    "admitted_lost": [
+      {"type":"stage","background":"mountains","cast":["mira","golem"]},
+      {"type":"set","key":"admitted_lost","value":true},
+      {"type":"add","key":"trust","value":1},
+      {"type":"say","speaker":"mira","text":"I'm lost. I'll admit that much. The map stopped agreeing with the mountain somewhere around dawn."},
+      {"type":"say","speaker":"golem","text":"Maps rarely survive contact with this place. Honesty, though — that is rarer still."},
+      {"type":"say","speaker":"mira","text":"Don't make it into a virtue. I'm just tired."},
+      {"type":"jump","target":"the_offer"}
+    ],
+    "the_offer": [
+      {"type":"stage","background":"mountains","cast":["mira","golem"]},
+      {"type":"say","speaker":"golem","text":"There is work in me that has gone unfinished for six hundred years. Gears that no longer turn. A name I can no longer pronounce."},
+      {"type":"say","speaker":"mira","text":"And you want me to what — reach in?"},
+      {"type":"say","speaker":"golem","text":"Mend me, and I will carry you over the peaks by morning. Refuse, and I will let you pass. But you will walk, and the walking is long."},
+      {"type":"choice","options":[
+        {"text":"Look around the ridge first.","target":"wander"},
+        {"text":"Reach for the seized gear in his chest.","target":"mending"},
+        {"text":"\"What happens to you if nobody ever does?\"","target":"the_question"},
+        {"text":"Step back, and keep your hands to yourself.","target":"refusal"}
+      ]}
+    ],
+    "the_question": [
+      {"type":"stage","background":"mountains","cast":["mira","golem"]},
+      {"type":"add","key":"trust","value":2},
+      {"type":"say","speaker":"mira","text":"What happens to you if nobody ever does?"},
+      {"type":"say","speaker":"","text":"For a long moment the only sound is wind moving through him, the way it moves through a broken window."},
+      {"type":"say","speaker":"golem","text":"I keep counting. That is all. The counting does not stop when the turning does."},
+      {"type":"say","speaker":"mira","text":"That's a horrible answer."},
+      {"type":"say","speaker":"golem","text":"You asked a horrible question. I thought it deserved the truth."},
+      {"type":"jump","target":"after_question"}
+    ],
+    "after_question": [
+      {"type":"stage","background":"mountains","cast":["mira","golem"]},
+      {"type":"choice","options":[
+        {"text":"Reach for the seized gear after all.","target":"mending"},
+        {"text":"Step back. This is not your repair to make.","target":"refusal"},
+        {"text":"\"Tell me the name you can't pronounce. I'll carry it for you.\"","target":"the_name","condition":{"key":"trust","op":">=","value":3}}
+      ]}
+    ],
+    "the_name": [
+      {"type":"stage","background":"mountains","cast":["mira","golem"]},
+      {"type":"set","key":"carries_name","value":true},
+      {"type":"music","track":"calm"},
+      {"type":"say","speaker":"golem","text":"You would carry it? It is heavy, and it is not a kind thing to know."},
+      {"type":"say","speaker":"mira","text":"I've carried worse up this mountain. Try me."},
+      {"type":"say","speaker":"","text":"He tells her. It takes some time, and it is not a word in any language she has met."},
+      {"type":"say","speaker":"mira","text":"...That's it? That's the whole thing?"},
+      {"type":"say","speaker":"golem","text":"That is the whole thing. Six hundred years, and it took eleven seconds to hand over."},
+      {"type":"jump","target":"mending"}
+    ],
+    "wander": [
+      {"type":"stage","background":"mountains","cast":["mira","golem"]},
+      {"type":"say","speaker":"mira","text":"Give me a minute. I don't decide things this size standing still."},
+      {"type":"explore","place":"ridge"},
+      {"type":"stage","background":"mountains","cast":["mira","golem"]},
+      {"type":"say","speaker":"golem","text":"Well. You have had your minute, and rather more of them than that."},
+      {"type":"if_jump","condition":{"key":"read_cairn","op":"==","value":true},"target":"wander_saw_cairn"},
+      {"type":"say","speaker":"mira","text":"It's a big mountain. Fine. Let's do this."},
+      {"type":"jump","target":"mending"}
+    ],
+    "wander_saw_cairn": [
+      {"type":"stage","background":"mountains","cast":["mira","golem"]},
+      {"type":"add","key":"trust","value":2},
+      {"type":"say","speaker":"mira","text":"Someone counted every winter you did. Six hundred and eleven marks, cut by hand, and then they stopped."},
+      {"type":"say","speaker":"golem","text":"I know."},
+      {"type":"say","speaker":"mira","text":"You said nobody had climbed this far."},
+      {"type":"say","speaker":"golem","text":"Nobody had. They were already here."},
+      {"type":"say","speaker":"","text":"He does not elaborate, and she decides — for now — not to make him."},
+      {"type":"jump","target":"mending"}
+    ],
+    "pass_talk": [
+      {"type":"stage","background":"mountains","cast":["mira","golem"]},
+      {"type":"say","speaker":"mira","text":"You said you'd carry me over. Do you actually know the way, or are we both guessing?"},
+      {"type":"say","speaker":"golem","text":"I know every way. I have had six hundred years and nothing to walk them with."},
+      {"type":"say","speaker":"mira","text":"That's not a yes."},
+      {"type":"say","speaker":"golem","text":"It is the closest thing to one you will get above the cloud line."},
+      {"type":"return"}
+    ],
+    "cairn_marks": [
+      {"type":"stage","background":"mountains","cast":["mira","golem"]},
+      {"type":"set","key":"read_cairn","value":true},
+      {"type":"say","speaker":"","text":"Someone has cut a line of shallow marks into the top stone. Not letters. Tallies."},
+      {"type":"say","speaker":"mira","text":"Six hundred and eleven."},
+      {"type":"say","speaker":"golem","text":"I did not cut those."},
+      {"type":"say","speaker":"mira","text":"...Then who was counting you?"},
+      {"type":"say","speaker":"","text":"The last mark points down, over the edge, toward a ledge she had not noticed."},
+      {"type":"return"}
+    ],
+    "ledge_find": [
+      {"type":"stage","background":"mountains","cast":["mira","golem"]},
+      {"type":"set","key":"found_gear","value":true},
+      {"type":"add","key":"trust","value":1},
+      {"type":"item_add","item":"brass_gear"},
+      {"type":"say","speaker":"","text":"The marked stone comes away easily. Behind it, wrapped in oiled cloth, is a brass gear no bigger than her palm — and unmistakably the shape of the one seized in his chest."},
+      {"type":"say","speaker":"mira","text":"Someone left this here. For you. And then stopped coming."},
+      {"type":"say","speaker":"golem","text":"...Yes."},
+      {"type":"say","speaker":"golem","text":"Bring it up. Please."},
+      {"type":"say","speaker":"","text":"It is the first time he has asked for anything."},
+      {"type":"return"}
+    ],
+    "give_gear": [
+      {"type":"stage","background":"mountains","cast":["mira","golem"]},
+      {"type":"say","speaker":"","text":"She holds it up. Small, filthy, and unmistakably his."},
+      {"type":"say","speaker":"golem","text":"...Where."},
+      {"type":"say","speaker":"mira","text":"Under a marked stone on the ledge. Wrapped, so it wouldn't corrode. Someone meant you to have it back."},
+      {"type":"say","speaker":"","text":"He is quiet for long enough that she wonders whether she has broken something worse than a gear."},
+      {"type":"say","speaker":"golem","text":"Put it in. Please. I find I cannot ask twice."},
+      {"type":"item_remove","item":"brass_gear"},
+      {"type":"set","key":"gear_returned","value":true},
+      {"type":"add","key":"trust","value":3},
+      {"type":"say","speaker":"","text":"It seats with a sound like a held breath let go."},
+      {"type":"return"}
+    ],
+    "mending": [
+      {"type":"stage","background":"mountains","cast":["mira","golem"]},
+      {"type":"music","track":"calm"},
+      {"type":"say","speaker":"","text":"The bent wheel resists, complains, and finally gives. Something deep in the gold starts keeping time with her pulse."},
+      {"type":"say","speaker":"golem","text":"Ah. Warm hands. I had forgotten the shape of that."},
+      {"type":"if_jump","condition":{"key":"knows_name","op":"==","value":false},"target":"ending_carried"},
+      {"type":"say","speaker":"golem","text":"Thank you, Mira."},
+      {"type":"say","speaker":"mira","text":"You remembered."},
+      {"type":"say","speaker":"golem","text":"I have had a great deal of practice at counting. A name is easier."},
+      {"type":"jump","target":"ending_carried"}
+    ],
+    "refusal": [
+      {"type":"stage","background":"mountains","cast":["mira","golem"]},
+      {"type":"stop_music"},
+      {"type":"say","speaker":"mira","text":"No. I don't know what I'd be starting, and neither do you."},
+      {"type":"say","speaker":"golem","text":"Wise. Cowardly, but wise. Not every hand that opens me means to close me again."},
+      {"type":"if_jump","condition":{"key":"knows_name","op":"==","value":true},"target":"refusal_named"},
+      {"type":"if_jump","condition":{"key":"admitted_lost","op":"==","value":true},"target":"refusal_lost"},
+      {"type":"say","speaker":"golem","text":"Go, then. Stranger you came, stranger you leave. It is the usual arrangement."},
+      {"type":"jump","target":"ending_walked"}
+    ],
+    "refusal_named": [
+      {"type":"stage","background":"mountains","cast":["mira","golem"]},
+      {"type":"say","speaker":"golem","text":"Go, then, Mira. I will keep the name. It costs me nothing to hold, and I have the room."},
+      {"type":"say","speaker":"mira","text":"That's not remotely comforting."},
+      {"type":"say","speaker":"golem","text":"No. But it is true, and you seemed to prefer those."},
+      {"type":"jump","target":"ending_walked"}
+    ],
+    "refusal_lost": [
+      {"type":"stage","background":"mountains","cast":["mira","golem"]},
+      {"type":"say","speaker":"golem","text":"Go, then. You said you were lost. Follow the water down — it is less honest than you are, but it knows the way."},
+      {"type":"say","speaker":"mira","text":"...Thank you."},
+      {"type":"jump","target":"ending_walked"}
+    ],
+    "ending_carried": [
+      {"type":"stage","background":"mountains","cast":["mira"]},
+      {"type":"say","speaker":"","text":"He carries her over the peaks by morning, exactly as promised."},
+      {"type":"if_jump","condition":{"key":"carries_name","op":"==","value":true},"target":"ending_carried_name"},
+      {"type":"say","speaker":"","text":"Neither of them says anything about the winters. Below the pass the map starts agreeing with the mountain again, which Mira decides not to mention."},
+      {"type":"return"}
+    ],
+    "ending_carried_name": [
+      {"type":"stage","background":"mountains","cast":["mira"]},
+      {"type":"say","speaker":"","text":"She says the name once, near the summit, mostly to check that she still has it. The wind takes it and gives nothing back."},
+      {"type":"say","speaker":"","text":"Below the pass she stops counting the winters he told her about, and starts counting the ones ahead. It is a better arithmetic, and it is his now as much as hers."},
+      {"type":"return"}
+    ],
+    "ending_walked": [
+      {"type":"stage","background":"mountains","cast":["mira"]},
+      {"type":"say","speaker":"","text":"The cloud closes over him as she passes. She walks."},
+      {"type":"say","speaker":"","text":"The walking is long, and she is alone with the sound of her own gears — and, for rather longer than she expects, with the arithmetic of six hundred and eleven winters."},
+      {"type":"return"}
+    ]
+  }
+}
+
